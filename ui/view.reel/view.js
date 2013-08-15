@@ -39,18 +39,22 @@ var Montage = require("montage").Montage;
 var Component = require("montage/ui/component").Component;
 var GLSLProgram = require("runtime/glsl-program").GLSLProgram;
 var ResourceManager = require("runtime/helpers/resource-manager").ResourceManager;
+var glTFScene = require("runtime/glTF-scene").glTFScene;
+var glTFNode = require("runtime/glTF-node").glTFNode;
 var Scene = require("runtime/scene").Scene;
+var Node = require("runtime/node").Node;
 var SceneRenderer = require("runtime/scene-renderer").SceneRenderer;
-var Material = require("runtime/material").Material;
+var glTFMaterial = require("runtime/glTF-material").glTFMaterial;
 var Utilities = require("runtime/utilities").Utilities;
 var dom = require("montage/core/dom");
 var Point = require("montage/core/geometry/point").Point;
 var OrbitCamera = require("runtime/dependencies/camera.js").OrbitCamera;
 var TranslateComposer = require("montage/composer/translate-composer").TranslateComposer;
-var RuntimeTFLoader = require("runtime/runtime-tf-loader").RuntimeTFLoader;
-var URL = require("montage/core/url");
 var BuiltInAssets = require("runtime/builtin-assets").BuiltInAssets;
 var WebGLRenderer = require("runtime/webgl-renderer").WebGLRenderer;
+var URL = require("montage/core/url");
+var Projection = require("runtime/projection").Projection;
+var Camera = require("runtime/camera").Camera;
 
 /**
     Description TODO
@@ -65,6 +69,81 @@ exports.View = Component.specialize( {
         }
     },
 
+    _sceneTime: { value: 0, writable: true },
+    _lastTime: { value: 0, writable: true },
+
+    play: {
+        value: function() {
+            switch (this._state) {
+                case this.PAUSE:
+                case this.STOP:
+                    this._lastTime = Date.now();
+                    this._state = this.PLAY;
+                    this.needsDraw = true;
+                    break;
+                default:
+                    break;
+            }
+
+            this._state = this.PLAY;
+        }
+    },
+
+    pause: {
+        value: function() {
+            this._state = this.PAUSE;
+        }
+    },
+
+    _viewPointIndex: { value: 0, writable: true },
+
+    automaticallyCycleThroughViewPoints: { value: true, writable: true },
+
+    loops: { value: true, writable: true},
+
+    stop: {
+        value: function() {
+            this._sceneTime = 0;
+            this._state = this.STOP;
+            this.needsDraw = true;
+        }
+    },
+
+    STOP: { value: 0, writable: true },
+    PLAY: { value: 1, writable: true },
+    PAUSE: { value: 2, writable: true },
+
+    _state: { value: 0, writable: true },
+
+    _viewPoint: { value: null, writable: true },
+
+    viewPoint: {
+        get: function() {
+            return this._viewPoint;
+        },
+        set: function(value) {
+            if (this._viewPoint != value) {
+                var previousViewPoint = null;
+                if (this._viewPoint && value) {
+                    if (this._viewPoint.scene == value.scene) {
+                        previousViewPoint = this._viewPoint;
+                    }
+                }
+
+                this._viewPoint = value;
+                if (value) {
+                    if (this.scene && (this._viewPoint.scene == null)) {
+                        this._viewPoint.scene = this.scene;
+                    }
+                }
+                if (this.sceneRenderer) {
+                    this.interpolatingViewPoint = {"previous": previousViewPoint ? previousViewPoint.glTFElement : null, "step":0, "start" : Date.now() }
+                    this.sceneRenderer.technique.rootPass.viewPoint = value ? value.glTFElement : null;
+                }
+            }
+        }
+    },
+
     translateComposer: {
         value: null
     },
@@ -76,15 +155,6 @@ exports.View = Component.specialize( {
     update: {
         value: function() {
             this.needsDraw = true;
-        }
-    },
-
-    viewPoint: {
-        get: function() {
-            return this.sceneRenderer ? this.sceneRenderer.technique.rootPass.viewPoint : null;
-        },
-        set: function(value) {
-            this.sceneRenderer.technique.rootPass.viewPoint = value;
         }
     },
 
@@ -118,27 +188,53 @@ exports.View = Component.specialize( {
             return this._sceneRenderer;
         },
         set: function(value) {
-            this._sceneRenderer = value;
+            if (value != this._sceneRenderer) {
+                this._sceneRenderer = value;
+            }
         }
     },
 
+    handleStatusChange: {
+        value: function(status, key, object) {
+            if (status === "loaded") {
+                this.scene = object;
+                this.needsDraw = true;
+                this.interpolatingViewPoint = null;
+            }
+        }
+    },
+
+    _scene: { value: null, writable: true },
+
     scene: {
         get: function() {
-            if (this.sceneRenderer) {
-                return this.sceneRenderer.scene;
-            }
-            return null;
+            return this._scene;
         },
 
         set: function(value) {
             if (this.scene !== value) {
-                if (this.delegate.sceneWillChange) {
-                    this.delegate.sceneWillChange();
+                var sceneReady = value != null ? (value.status == "loaded") : true; //force true if null
+                this.viewPointModifierMatrix = mat4.identity();
+                this.interpolatingViewPoint = null;
+
+                //sort of a hack, only set the scene when ready
+                if (!sceneReady) {
+                    value.addOwnPropertyChangeListener("status", this);
+                    return;
+                }
+
+                if (this.delegate && sceneReady) {
+                    if (this.delegate.sceneWillChange) {
+                        this.delegate.sceneWillChange();
+                    }
                 }
 
                 this._scene = value;
-                this.applyScene(value);
-                if (this.delegate) {
+                if (value.status == "loaded") {
+                    this.applyScene(value);
+                }
+
+                if (this.delegate && sceneReady) {
                     if (this.delegate.sceneDidChange) {
                         this.delegate.sceneDidChange();
                     }
@@ -147,9 +243,8 @@ exports.View = Component.specialize( {
        }
     },
 
-    _scenePath: { value: null, writable: true },
-
     //Test for https://github.com/KhronosGroup/glTF/issues/67
+    /*
     loadMultipleScenesTest: {
         value: function() {
             var paths = [];
@@ -158,8 +253,7 @@ exports.View = Component.specialize( {
             paths.push( "model/parts/Part3.json" );
 
             var pathsIndex = 0;
-
-            var mainScene = Object.create(Scene).init();
+            var mainScene = Object.create(glTFScene).init();
             var readerDelegate = {};
             readerDelegate.loadCompleted = function (scene) {
                 mainScene.rootNode.children.push(scene.rootNode);
@@ -175,12 +269,13 @@ exports.View = Component.specialize( {
                 var loader = Object.create(RuntimeTFLoader);
                 loader.initWithPath(path);
                 loader.delegate = readerDelegate;
-                loader.load(null /* userInfo */, null /* options */);
+                loader.load(null, null );
             }, this);
-
         }
     },
+    */
 
+    //scenePath is legacy and is kept just for compatibility for now
     scenePath: {
         set: function(value) {
             if (value) {
@@ -191,45 +286,58 @@ exports.View = Component.specialize( {
                     value = URL.resolve(packages[0], value);
                 }
             }
-            if (value !== this._scenePath) {
-                if (0) {
-                    this.loadMultipleScenesTest();
-                } else {
-                    var loader = Object.create(RuntimeTFLoader);
 
-                    var readerDelegate = {};
-                    readerDelegate.loadCompleted = function (scene) {
-                        this.totalBufferSize =  loader.totalBufferSize;
-                        this.scene = scene;
-                        this.needsDraw = true;
-                        //FIXME:HACK: loader should be passed as arg, also multiple observers should pluggable here so that the top level could just pick that size info. (for the progress)
-                    }.bind(this);
-
-                    if (value) {
-                        var loader = Object.create(RuntimeTFLoader);
-                        loader.initWithPath(value);
-                        loader.delegate = readerDelegate;
-                        loader.load(null /* userInfo */, null /* options */);
-                    } else {
-                        this.scene = null;
-                    }
+            if (this.scene) {
+                if (value == this.scene.path) {
+                    return;
                 }
-
-                this._scenePath = value;
             }
-            this.needsDraw = true;
-        }, 
+
+            var scene = Montage.create(Scene).init();
+            //this.scene = scene;
+            scene.addOwnPropertyChangeListener("status", this);
+            scene.path = value;
+        },
+
         get: function() {
-            return this._scenePath;
+            return this.scene ? this.scene.path : null;
         }
     },
-                        
+
+    //we don't want to cache this to avoid synchronization here, so we don't want to call it often either :)
+    _getViewPoints: {
+        value: function(scene) {
+            var viewPoints = [];
+            var node = scene.glTFElement.rootNode;
+            node.apply( function(node, parent, parentTransform) {
+                if (node.cameras) {
+                    if (node.cameras.length)
+                        viewPoints = viewPoints.concat(node);
+                }
+                return null;
+            }, true, null);
+
+            var m3dNodes = [];
+            viewPoints.forEach( function(viewPoint) {
+                var m3dNode = Montage.create(Node)
+                m3dNode.scene = scene;
+                m3dNode.id = viewPoint.baseId;
+                m3dNodes.push(m3dNode);
+            }, this);
+
+            return m3dNodes;
+        }
+    },
+
     applyScene: {
-        value:function (scene) {
+        value:function (m3dScene) {
+            var scene = m3dScene.glTFElement;
             if (this.sceneRenderer) {
                 if (this.sceneRenderer.technique.rootPass) {
                     if (scene) {
                         this.orbitCamera = null;
+                        var viewPoints= this._getViewPoints(m3dScene);
+                        var hasCamera = viewPoints.length > 0;
 
                         //compute hierarchical bbox for the whole scene
                         //this will be removed from this place when node bounding box become is implemented as hierarchical
@@ -237,25 +345,61 @@ exports.View = Component.specialize( {
                         var node = scene.rootNode;
                         var sceneBBox = null;
                         var self = this;
-                        var hasCamera = false;
                         node.apply( function(node, parent, parentTransform) {
                             var modelMatrix = mat4.create();
                             mat4.multiply( parentTransform, node.transform.matrix, modelMatrix);
-                            if (node.cameras) {
-                                hasCamera |= (node.cameras.length > 0);
-                            }
-
                             if (node.boundingBox) {
                                 var bbox = Utilities.transformBBox(node.boundingBox, modelMatrix);
+
                                 if (sceneBBox) {
-                                    sceneBBox = Utilities.mergeBBox(bbox, sceneBBox);
+                                    if (node.meshes) {
+                                        if (node.meshes.length > 0)
+                                            sceneBBox = Utilities.mergeBBox(bbox, sceneBBox);
+                                    }
                                 } else {
                                     sceneBBox = bbox;
                                 }
                             }
-
                             return modelMatrix;
                         }, true, ctx);
+
+                        // arbitry set first coming camera as the view point
+                        if (viewPoints.length) {
+                            var shouldKeepViewPoint = false;
+                            if (this.viewPoint) {
+                                if (this.viewPoint.scene) {
+                                    shouldKeepViewPoint = this.viewPoint.scenePath === m3dScene.scenePath;
+                                }
+                            }
+                            if (shouldKeepViewPoint === false) {
+                                this.viewPoint = viewPoints[0];
+                            }
+                        } else {
+                            //TODO: make that a default projection method
+                            var projection = Object.create(Projection);
+                            projection.initWithDescription( {   "projection":"perspective",
+                                "yfov":45,
+                                "aspectRatio":1,
+                                "znear":0.1,
+                                "zfar":100});
+
+                            //create camera
+                            var camera = Object.create(Camera).init();
+                            camera.projection = projection;
+                            //create node to hold the camera
+                            var cameraNode = Object.create(glTFNode).init();
+                            camera.name = cameraNode.name = "camera01";
+                            cameraNode.id = "__default_camera";
+                            cameraNode.baseId = cameraNode.id;
+                            scene.ids[cameraNode.baseId] = cameraNode;
+                            cameraNode.cameras.push(camera);
+                            //FIXME: find out why even when checking that we mergeBBOX of meshes only the highest level BBOX is still wrong if camera is added to the scene.
+                            //scene.rootNode.children.push(cameraNode);
+                            var m3dNode = Montage.create(Node);
+                            m3dNode.scene = m3dScene;
+                            m3dNode.id = cameraNode.baseId;
+                            this.viewPoint = m3dNode;
+                        }
 
                         if (sceneBBox && !hasCamera) {
                             var sceneSize = [(sceneBBox[1][0] - sceneBBox[0][0]) ,
@@ -284,30 +428,47 @@ exports.View = Component.specialize( {
 
                     }
                     this.sceneRenderer.scene = scene;
-                    if (!hasCamera && scene) {
+                    if (scene) {
                         this.orbitCamera = new MontageOrbitCamera(this.canvas);
                         this.orbitCamera.translateComposer = this.translateComposer;
                         this.orbitCamera._hookEvents(this.canvas);
-                        this.orbitCamera.maxDistance = 200;
-                        this.orbitCamera.minDistance = 0.0;
-                        this.orbitCamera.setDistance(1.3);
-                        this.orbitCamera.distanceStep = 0.0001;
-                        this.orbitCamera.constrainDistance = false;
+                        this.orbitCamera.constrainDistance = true;
+
+                        this.orbitCamera.maxDistance = hasCamera ? 15 : 200;
+                        this.orbitCamera.minDistance = hasCamera ? -45 : 0;
+
+                        this.orbitCamera.setDistance(hasCamera ? 0 : 1.3);
+                        this.orbitCamera.distanceStep = hasCamera ? 0.015 : 0.0001;
+                        this.orbitCamera.setRideMode(hasCamera);
                         this.orbitCamera.setYUp(true);
-                        //this.orbitCamera.orbitX = 0.675
-                        //this.orbitCamera.orbitY = 1.8836293856408279;
 
-                        //this.orbitCamera.minOrbitX = 0.2;//this.orbitCamera.orbitX - 0.6;
-                        //this.orbitCamera.maxOrbitX = 1.2;
+                        //allow small interaction when a camera is present
+                        if (hasCamera) {
+                            this.orbitCamera.minOrbitX = -0.4;
+                            this.orbitCamera.maxOrbitX = 0.4;
+                            this.orbitCamera.minOrbitY = -0.4;
+                            this.orbitCamera.maxOrbitY = 0.4;
+                        }
 
-                        this.orbitCamera.constrainXOrbit = false;
-                        this.orbitCamera.constrainYOrbit = false;
+                        this.orbitCamera.constrainXOrbit = hasCamera;
+                        this.orbitCamera.constrainYOrbit = hasCamera;
 
-
-                        // this.orbitCamera.constrainXOrbit = true;
-                        this.orbitCamera.setCenter(center);
+                        if (center)
+                            this.orbitCamera.setCenter(center);
                     }
                     this.needsDraw = true;
+                    //right now, play by default
+                    if (this.viewPoint) {
+                        if (this.viewPoint.scene == null) {
+                            this.viewPoint.scene = m3dScene;
+                        }
+                        if (this.sceneRenderer) {
+                            this.interpolatingViewPoint = null;
+                            this.viewPoint.glTFElement.presentationTransform = null;
+                            this.sceneRenderer.technique.rootPass.viewPoint = this.viewPoint.glTFElement;
+                        }
+                    }
+                    this.play();
                 }
             }
         }
@@ -321,14 +482,16 @@ exports.View = Component.specialize( {
 
     enterDocument: {
         value: function(firstTime) {
-            var webGLContext = this.canvas.getContext("experimental-webgl", { antialias: true}) ||this.canvas.getContext("webgl", { antialias: true});
+            var webGLContext = this.canvas.getContext("experimental-webgl", { antialias: true, preserveDrawingBuffer: true}) ||this.canvas.getContext("webgl", { antialias: true});
             var webGLRenderer = Object.create(WebGLRenderer).initWithWebGLContext(webGLContext);
+            webGLContext.enable(webGLContext.DEPTH_TEST);
             var options = null;
             this.sceneRenderer = Object.create(SceneRenderer);
             this.sceneRenderer.init(webGLRenderer, options);
             this.sceneRenderer.webGLRenderer.resourceManager.observers.push(this);
-            if (this._scene)
-                this.applyScene(this._scene);
+
+            if (this.scene)
+                this.applyScene(this.scene);
 
             //setup gradient
             var self = this;
@@ -397,6 +560,7 @@ exports.View = Component.specialize( {
         value: function (event) {
             this.needsDraw = true;
 
+
             //no drag at the moment
             this._mousePosition = null;
         }
@@ -408,6 +572,11 @@ exports.View = Component.specialize( {
             this._consideringPointerForPicking = true;
             var position = this.getRelativePositionToCanvas(event);
             this._mousePosition = [position.x * this.scaleFactor,  this.height - (position.y * this.scaleFactor)];
+
+            if (this._state == this.PLAY) {
+                this.pause();
+            }
+
         }
     },
 
@@ -416,6 +585,10 @@ exports.View = Component.specialize( {
 
             if (this._consideringPointerForPicking && event.target === this.canvas) {
                 event.preventDefault();
+            }
+
+            if (this._state == this.PAUSE) {
+                this.play();
             }
 
             this._consideringPointerForPicking = false;
@@ -479,9 +652,11 @@ exports.View = Component.specialize( {
             return this._showGradient;
         },
         set: function(flag) {
-            this._showGradient = flag;
+            if (flag != this._showGradient) {
+                this._showGradient = flag;
+                this.needsDraw = true;
+            }
         }
-
     },
 
     showReflection: {
@@ -498,8 +673,10 @@ exports.View = Component.specialize( {
 
     drawGradient: {
         value: function() {
-            if (this.gradientRenderer) {
-                this.gradientRenderer.render();
+            if (this.showGradient) {
+                if (this.gradientRenderer) {
+                    this.gradientRenderer.render();
+                }
             }
         }
     },
@@ -636,9 +813,10 @@ exports.View = Component.specialize( {
                 this.displayAllBBOX(this.orbitCamera.getViewMat(), nodeID);
             else {
                 var mat = mat4.create();
-                mat4.inverse(this.viewPoint.transform.matrix, mat);
+                mat4.inverse(this.viewPoint.glTFElement.transform.matrix, mat);
                 this.displayAllBBOX(mat, nodeID);
             }
+
         }
     },
 
@@ -646,22 +824,22 @@ exports.View = Component.specialize( {
         value: function(cameraMatrix, selectedNodeID) {
             if (!this.scene || !this.showBBOX)
                 return;
+            if (this.scene.glTFElement) {
+                var ctx = mat4.identity();
+                var node = this.scene.glTFElement.rootNode;
+                var self = this;
 
-            var ctx = mat4.identity();
-            var node = this.scene.rootNode;
-            var self = this;
-
-            node.apply( function(node, parent, parentTransform) {
-                var modelMatrix = mat4.create();
-                mat4.multiply( parentTransform, node.transform.matrix, modelMatrix);
-                if (node.boundingBox && node.id == selectedNodeID) {
-                    self.displayBBOX(node.boundingBox, cameraMatrix, modelMatrix);
-                }
-                return modelMatrix;
-            }, true, ctx);
+                node.apply( function(node, parent, parentTransform) {
+                    var modelMatrix = mat4.create();
+                    mat4.multiply( parentTransform, node.transform.matrix, modelMatrix);
+                    if (node.boundingBox && node.id == selectedNodeID) {
+                        self.displayBBOX(node.boundingBox, cameraMatrix, modelMatrix);
+                    }
+                    return modelMatrix;
+                }, true, ctx);
+            }
         }
     },
-
 
     _width: {
         value: null
@@ -716,36 +894,85 @@ exports.View = Component.specialize( {
         value: 0
     },
 
+    interpolatingViewPoint: {
+        value: null, writable:true
+    },
+
     draw: {
         value: function() {
+
+            if (!this._scene)
+                return;
+            var viewPoint = this.viewPoint;
+            if (!viewPoint) {
+                return;
+            }
+
             var self = this;
             var time = Date.now();
             if (this.sceneRenderer && this.scene) {
-                if (this.scene.animationManager)
-                    this.scene.animationManager.updateTargetsAtTime(time, this.sceneRenderer.webGLRenderer.resourceManager);
+
+                var animationManager = this.scene.glTFElement.animationManager;
+
+                if (this._state == this.PLAY && animationManager) {
+                    this._sceneTime += time - this._lastTime;
+                    if (this.scene.glTFElement.duration !== -1) {
+                        if (this._sceneTime / 1000. > this.scene.glTFElement.duration) {
+
+                            if (this.automaticallyCycleThroughViewPoints == true) {
+                                var viewPoints = this._getViewPoints(this.scene);
+                                if (viewPoints.length > 0) {
+                                    var nextViewPoint;
+                                    var checkIdx = 0;
+                                    do {
+                                        this._sceneTime = 0;
+                                        this._viewPointIndex++;
+                                        checkIdx++;
+                                        this._viewPointIndex = this._viewPointIndex % viewPoints.length;
+                                        nextViewPoint = viewPoints[this._viewPointIndex];
+                                    } while ((checkIdx < viewPoints.length) && (animationManager.hasAnimation(nextViewPoint.id) == false));
+                                    this.viewPoint = nextViewPoint;
+                                }
+                            }
+
+                            if (this.loops) {
+                                this._sceneTime = this._sceneTime % this.scene.glTFElement.duration;
+                           } else {
+                                this.stop();
+                            }
+                        }
+                    }
+
+                    this.scene.glTFElement.animationManager.updateTargetsAtTime(this._sceneTime, this.sceneRenderer.webGLRenderer.resourceManager);
+                }
             }
+            this._lastTime = time;
 
             var webGLContext = this.getWebGLContext();
             webGLContext.viewport(0, 0, this._width, this._height);
             if (webGLContext) {
-                //webGLContext.clearColor(0,0,0,0.);
-                //webGLContext.clear(webGLContext.DEPTH_BUFFER_BIT | webGLContext.COLOR_BUFFER_BIT);
+                webGLContext.clearColor(0,0,0,0.);
+                webGLContext.clear(webGLContext.DEPTH_BUFFER_BIT | webGLContext.COLOR_BUFFER_BIT);
             }
 
-            //this.canvas.setAttribute("width", this._width + "px");
-            //this.canvas.setAttribrenderTargetute("height", this._height + "px");
             //----
             if (this.viewPoint) {
-                this.viewPoint.cameras[0].projection.aspectRatio = this._width / this._height;
-                //this.viewPoint.cameras[0].projection.zfar = 100;
-                //this.viewPoint.cameras[0].projection.znear = 0.01;
+                if (this.viewPoint.glTFElement)
+                    this.viewPoint.glTFElement.cameras[0].projection.aspectRatio =  this._width / this._height;
             }
 
             if (this.orbitCamera) {
+                var hasAnimation = false;
                 var cameraMatrix = this.orbitCamera.getViewMat();
-                mat4.inverse(cameraMatrix, this.viewPoint.transform.matrix);
-            }
 
+                if (this.scene) {
+                    if (this.scene.glTFElement.animationManager) {
+                        if (this.scene.glTFElement.animationManager.animations) {
+                            hasAnimation = true;
+                        }
+                    }
+                }
+            }
 
             var webGLContext = this.getWebGLContext(),
                 renderer,
@@ -753,8 +980,7 @@ exports.View = Component.specialize( {
                 height;
 
 
-            if (!this._scene)
-                return;
+            mat4.set(cameraMatrix, this.viewPointModifierMatrix);
 
            if(this.orbitCamera && this.orbitCameraAnimating) {
                 if (this.orbitCameraAnimatingXVel < 0.0013) {
@@ -767,8 +993,8 @@ exports.View = Component.specialize( {
                 this.orbitCamera.orbit(this.orbitCameraAnimatingXVel, this.orbitCameraAnimatingYVel);
                 this.needsDraw = true;
             }
-                //FIXME: shouldn't be needed
-                this.needsDraw = true;
+            if (this._state == this.PLAY)
+               this.needsDraw = true;
 
             if (this.scene) {
                 renderer = this.sceneRenderer.webGLRenderer;
@@ -783,11 +1009,6 @@ exports.View = Component.specialize( {
                     this.canvas.width = this._width;
                     this.canvas.height = this._height;
 
-                    var viewPoint = this.viewPoint;
-                    if (!viewPoint) {
-                        return;
-                    }
-
                     /* ------------------------------------------------------------------------------------------------------------
                         Draw reflected scene
                             - enable depth testing
@@ -799,15 +1020,17 @@ exports.View = Component.specialize( {
                         webGLContext.frontFace(webGLContext.CW);
                         var savedTr = mat4.create();
 
-                        var node = this.scene.rootNode;
+                        var rootNode = this.scene.glTFElement.rootNode;
+
+                        var node = rootNode;
                         //save car matrix
-                        mat4.set(this.scene.rootNode.transform.matrix, savedTr);
+                        mat4.set(rootNode.transform.matrix, savedTr);
                         webGLContext.depthMask(true);
 
                         var translationMatrix = mat4.translate(mat4.identity(), [0, 0, 0 ]);
                         var scaleMatrix = mat4.scale(translationMatrix, [1, 1, -1]);
                         mat4.multiply(scaleMatrix, node.transform.matrix) ;
-                        this.scene.rootNode.transform.matrix = scaleMatrix;
+                        rootNode.transform.matrix = scaleMatrix;
 
                         //FIXME: passing a matrix was the proper to do this, but right now matrix updates are disabled (temporarly)
                         this.sceneRenderer.technique.rootPass.viewPoint.flipped = true;
@@ -816,31 +1039,37 @@ exports.View = Component.specialize( {
                         webGLContext.depthMask(true);
                         this.sceneRenderer.technique.rootPass.viewPoint.flipped = false;
 
-                        this.scene.rootNode.transform.matrix = savedTr;
+                        rootNode.transform.matrix = savedTr;
                     }
                     
                     //restore culling order
                     webGLContext.frontFace(webGLContext.CCW);
 
-                    webGLContext.disable(webGLContext.DEPTH_TEST);
-                    webGLContext.depthMask(false);
+                   // webGLContext.disable(webGLContext.DEPTH_TEST);
+                    //webGLContext.depthMask(false);
                     this.drawGradient();
                     //this.drawFloor(cameraMatrix);
                     webGLContext.depthMask(true);
 
                     webGLContext.depthFunc(webGLContext.LESS);
-                    webGLContext.enable(webGLContext.DEPTH_TEST);
+                    //webGLContext.enable(webGLContext.DEPTH_TEST);
                     webGLContext.enable(webGLContext.CULL_FACE);
                     webGLContext.disable(webGLContext.BLEND);
 
                     if (this._mousePosition) {
                         this.sceneRenderer.render(time, {    "picking" : true,
                             "coords" : this._mousePosition,
-                            "delegate" : this
+                            "delegate" : this,
+                            "viewPointModifierMatrix" : this.viewPointModifierMatrix,
+                            "interpolatingViewPoint" : this.interpolatingViewPoint
                         });
                     }
 
-                    this.sceneRenderer.render(time);
+                    this.sceneRenderer.render(time, {
+                        "viewPointModifierMatrix" : this.viewPointModifierMatrix,
+                        "interpolatingViewPoint" : this.interpolatingViewPoint
+
+                    });
 
                     webGLContext.flush();
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2013, Fabrice Robinet
+// Copyright (c) 2013, Fabrice Robinet.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -22,52 +22,83 @@
 // THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 var Montage = require("montage").Montage;
-var Component3D = require("runtime/component-3d").Component3D;
+var glTFNode = require("runtime/glTF-node").glTFNode;
 
-exports.Material = Component3D.specialize( {
+exports.glTFScene = Montage.specialize( {
 
     constructor: {
-        value: function Material() {
+        value: function glTFScene() {
             this.super();
-            this.addRangeAtPathChangeListener("filterColor", this, "handleFilterColorChange");
-            this.addOwnPropertyChangeListener("glTFElement", this);
         }
     },
 
-    filterColor: { value: [1,1,1,0]},
+    _rootNode: { value : null, writable: true },
 
-    handleGlTFElementChange: {
-        value: function() {
-            this.handleFilterColorChange();
-        }
-    },
-
-    handleFilterColorChange: {
-        value: function(plus, minus, index) {
-            if (this.glTFElement != null) {
-                if (this.glTFElement.parameters["filterColor"]) {
-                    this.glTFElement.parameters["filterColor"].value = this.filterColor;
-                }
-            }
-        }
-    },
-
-    _opacity: { value: 1., writable:true },
-
-    opacity: {
+    rootNode: {
+        get: function() {
+            return this._rootNode;
+        },
         set: function(value) {
-            if (this._opacity != value) {
-                this._opacity = value;
-                if (this.glTFElement != null) {
-                    if (this.glTFElement.parameters["transparency"]) {
-                        this.glTFElement.parameters["transparency"].value = value;
+            this._rootNode = value;
+        }
+    },
+
+    _id: { value: null, writable: true },
+
+    id: {
+        get: function() {
+            return this._id;
+        },
+        set: function(value) {
+            this._id = value;
+        }
+    },
+
+    _animationManager: { value: null, writable: true },
+
+    animationManager: {
+        get: function() {
+            return this._animationManager;
+        },
+        set: function(value) {
+            this._animationManager = value;
+        }
+    },
+
+    init: {
+        value: function() {
+            this.rootNode = Object.create(glTFNode);
+            this.rootNode.init();
+            return this;
+        }
+    },
+
+    //FIXME: naive - assume all animations have same length and just take the first one.
+    duration: {
+        get: function() {
+            if (this.animationManager) {
+                var animations = this.animationManager.animations;
+                if (animations) {
+                    if (animations.length) {
+                        return animations[0].duration;
                     }
                 }
             }
-        },
+        }
+    },
+
+    _name: {
+        value: null,
+        writable: true
+    },
+
+    name: {
+        enumerable: true,
         get: function() {
-            return this._opacity;
+            return this._name;
+        },
+        set: function(value) {
+            this._name = value;
         }
     }
-
 });

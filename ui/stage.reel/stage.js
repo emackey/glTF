@@ -38,6 +38,8 @@ var Component = require("montage/ui/component").Component;
 var RangeController = require("montage/core/range-controller").RangeController;
 var Utilities = require("runtime/utilities").Utilities;
 var Node = require("runtime/node").Node;
+
+var glTFNode = require("runtime/glTF-node").glTFNode;
 var Camera = require("runtime/camera").Camera;
 var GLSLProgram = require("runtime/glsl-program").GLSLProgram;
 var glMatrix = require("runtime/dependencies/gl-matrix").glMatrix;
@@ -83,13 +85,20 @@ exports.Stage = Montage.create(Component, /** @lends module:"montage/ui/stage.re
         value: function(firstTime) {
             if(firstTime) {
                 this.modelsController.content = [
+
                     { "name": "duck", "path": "model/duck/duck.json"},
+                    { "name": "Buggy", "path": "model/rambler/Rambler.json"},
+                    { "name": "SuperMurdoch", "path": "model/SuperMurdoch/SuperMurdoch.json"},
+                    { "name": "Wine", "path": "model/wine/wine.json"},
+                   /*
+                    { "name": "Nexus", "path": "model/NexusFlattened/NexusFlattened.json"},
+                    { "name": "room1", "path": "model/room/testRoom5.json"},
+
+
                     { "name": "megacity", "path": "model/megacity/megacityVideo.json"},
                     { "name": "minebot", "path": "model/minebot/mine_bot_anim.json"},
-                    { "name": "Nexus", "path": "model/NexusFlattened/NexusFlattened.json"},
                     { "name": "Buggy", "path": "model/rambler/Rambler.json"},
                     { "name": "BuggyFlatttened", "path": "model/rambler/RamblerFlattened.json"},
-                    { "name": "SuperMurdoch", "path": "model/SuperMurdoch/SuperMurdoch.json"},
                     { "name": "Wine", "path": "model/wine/wine.json"},
                     { "name": "balloon", "path": "model/baloon3/baloon.json"},
                     { "name": "frigate", "path": "model/frigate/frigate.json"},
@@ -98,7 +107,7 @@ exports.Stage = Montage.create(Component, /** @lends module:"montage/ui/stage.re
                     { "name": "FemurTri", "path": "model/femur/FemurTri.json"},
                     { "name": "challenge", "path": "model/challenge/challengeFlattened.json"},
                     { "name": "monster", "path": "model/monster/monster.json"},
-                    { "name": "FemurPoly", "path": "model/femur/FemurPoly.json"}
+                    { "name": "FemurPoly", "path": "model/femur/FemurPoly.json"}*/
                 ];
                 this.modelPath = this.modelsController.content[0].path;
             }
@@ -182,7 +191,15 @@ exports.Stage = Montage.create(Component, /** @lends module:"montage/ui/stage.re
 
     handleCameraChange: {
         value: function(camera) {
-            this.view.viewPoint = camera.node;
+            if (camera) {
+                var m3dNode = Montage.create(Node);
+                m3dNode.scene = this.view.scene;
+                m3dNode.id = camera.node.baseId;
+                this.view.viewPoint = m3dNode;
+            } else {
+                //FIXME: handle this case
+                //this.view.viewPoint = null;
+            }
         }
     },
 
@@ -225,6 +242,7 @@ exports.Stage = Montage.create(Component, /** @lends module:"montage/ui/stage.re
         value: function() {
             var resourceManager = this.view.getResourceManager();
             if (resourceManager) {
+                this.view.viewPoint = null;
                 resourceManager.maxConcurrentRequests = this.concurrentRequests;
                 resourceManager.bytesLimit = this.bytesLimit * 1024;
                 resourceManager.reset();
@@ -245,7 +263,7 @@ exports.Stage = Montage.create(Component, /** @lends module:"montage/ui/stage.re
                  this.camerasController.content = [];
 
                  var cameraNodes = [];
-                 this.view.scene.rootNode.apply( function(node, parent, context) {
+                 this.view.scene.glTFElement.rootNode.apply( function(node, parent, context) {
                      if (node.cameras) {
                          if (node.cameras.length)
                              cameraNodes = cameraNodes.concat(node);
