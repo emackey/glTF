@@ -21,6 +21,10 @@
     border: none;
 }
 
+.options .hidden {
+    display: none;
+}
+
 .options h3 {
     margin: 0 0 10px 0;
     color: hsl(0,0%,30%);
@@ -64,10 +68,15 @@
 
 .options .checkbox {
     font-size: 16px;
+    margin: 2px 0 2px 0;
 }
 
 .option .image {
     margin: 0 auto;     
+}
+
+.options .digit-Checkbox:after {
+    content: none;
 }
 
 /* Custom */
@@ -89,4 +98,13 @@
     background: url(montage-icon.png) no-repeat center;
     background-size: 100% auto;
     opacity: .1;
+}
+
+.glTFBranding {
+    width: 200px;
+    height: 100px;
+    margin: auto auto;
+    background: url(glTF_500.png) no-repeat center;
+    background-size: 100% auto;
+    opacity: 1;
 }

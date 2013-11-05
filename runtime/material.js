@@ -31,14 +31,18 @@ exports.Material = Component3D.specialize( {
             this.super();
             this.addRangeAtPathChangeListener("filterColor", this, "handleFilterColorChange");
             this.addOwnPropertyChangeListener("glTFElement", this);
+            this.addOwnPropertyChangeListener("image", this);
+            this.addOwnPropertyChangeListener("opacity", this);
         }
     },
 
-    filterColor: { value: [1,1,1,0]},
+    filterColor: { value: [1,1,1,1]},
 
     handleGlTFElementChange: {
         value: function() {
             this.handleFilterColorChange();
+            this.handleImageChange();
+            this.handleOpacityChange();
         }
     },
 
@@ -47,8 +51,106 @@ exports.Material = Component3D.specialize( {
             if (this.glTFElement != null) {
                 if (this.glTFElement.parameters["filterColor"]) {
                     this.glTFElement.parameters["filterColor"].value = this.filterColor;
+                    if (this.scene) {
+                        this.scene.dispatchEventNamed("materialUpdate", true, false, this);
+                    }
                 }
             }
+        }
+    },
+
+    handleOpacityChange: {
+        value: function() {
+            if (this.glTFElement != null) {
+                if (this.glTFElement.parameters["transparency"]) {
+                    this.glTFElement.parameters["transparency"].value = this.opacity;
+                    if (this.scene) {
+                        this.scene.dispatchEventNamed("materialUpdate", true, false, this);
+                    }
+                }
+            }
+        }
+    },
+
+    handleImageChange: {
+        value: function() {
+            if (this.glTFElement != null) {
+                if (this.glTFElement.parameters["diffuse"]) {
+                    if (this._image) {
+                        var imagePath = this.resolvePathIfNeeded(this._image);
+                        var parameterValue = this.parameterForImagePath(imagePath);
+                        this.glTFElement.parameters["diffuse"] = parameterValue;
+                        if (this.scene) {
+                            this.scene.dispatchEventNamed("textureUpdate", true, false, parameterValue);
+                        }
+                    }
+                }
+            }
+        }
+    },
+
+    parameterForImagePath: {
+        value: function(imagePath) {
+
+            var sampler = {
+                "magFilter": WebGLRenderingContext.LINEAR,
+                "minFilter": WebGLRenderingContext.LINEAR,
+                "type": "sampler",
+                "wrapS" : WebGLRenderingContext.REPEAT,
+                "wrapT" : WebGLRenderingContext.REPEAT
+            };
+
+            var source = {
+                "id" : "source-"+ imagePath,
+                "type" : "image",
+                "baseId" : "source-"+ imagePath,
+                "description" : {
+                    "path" : imagePath
+                }
+            };
+
+            var parameterValue = {
+                "baseId": "texture-" + imagePath,
+                "id": "texture-" + imagePath,
+                "format": WebGLRenderingContext.RGBA,
+                "internalFormat" : WebGLRenderingContext.RGBA,
+                "sampler" : sampler,
+                "source" : source,
+                "type" : "texture",
+                "target" : WebGLRenderingContext.TEXTURE_2D
+            };
+
+            var parameter = {
+                "parameter": "diffuse",
+                "value" : parameterValue
+            };
+
+            return parameter;
+        }
+    },
+
+    _image: { value: null , writable:true },
+
+    image: {
+        set: function(value) {
+            if (value) {
+                //FIXME: remove this when we initialized property image with the path in place when the glTFElement comes up
+                if (value.length == 0) {
+                    return;
+                }
+            } else {
+                return;
+            }
+
+            var lowerCaseImage = value.toLowerCase();
+            if ((lowerCaseImage.indexOf(".jpg") != -1) || (lowerCaseImage.indexOf(".jpeg") != -1) || (lowerCaseImage.indexOf(".png") != -1)) {
+                if (this._image != value) {
+                    this._image = value;
+                }
+            }
+        },
+        get: function() {
+            return this._image;
         }
     },
 
@@ -58,11 +160,6 @@ exports.Material = Component3D.specialize( {
         set: function(value) {
             if (this._opacity != value) {
                 this._opacity = value;
-                if (this.glTFElement != null) {
-                    if (this.glTFElement.parameters["transparency"]) {
-                        this.glTFElement.parameters["transparency"].value = value;
-                    }
-                }
             }
         },
         get: function() {

@@ -29,7 +29,66 @@ exports.Node = Component3D.specialize( {
     constructor: {
         value: function Node() {
             this.super();
+            this.addOwnPropertyChangeListener("hidden", this);
+            this.addOwnPropertyChangeListener("glTFElement", this);
+        }
+    },
+
+    handleGlTFElementChange: {
+        value: function() {
+            this.handleHiddenChange();
+        }
+    },
+
+    handleHiddenChange: {
+        value: function() {
+            if (this.glTFElement != null) {
+                this.glTFElement.hidden = this._hidden;
+                //FIXME: user a more appropriate name for this, it will just trigger a redraw
+                this.scene.dispatchEventNamed("materialUpdate", true, false, this);
+            }
+        }
+    },
+
+    _hidden: { value: false, writable:true },
+
+    hidden: {
+        set: function(value) {
+            if (this._hidden != value) {
+                this._hidden = value;
+            }
+        },
+        get: function() {
+            return this._hidden;
+        }
+    },
+
+    _observers: { value: null, writable: true},
+
+    addObserver: {
+        value: function(observer) {
+            if (this._observers == null) {
+                this._observers = [];
+            }
+
+            if (this._observers.indexOf(observer) === -1) {
+                this._observers.push(observer);
+            } else {
+                console.log("WARNING attempt to add 2 times the same observer in glTFNode")
+            }
+        }
+    },
+
+    removeObserver: {
+        value: function(observer) {
+            if (this._observers) {
+                var index = this._observers.indexOf(observer);
+                if (index !== -1) {
+                    this._observers.splice(index, 1);
+                }
+            }
         }
     }
+
 
 });

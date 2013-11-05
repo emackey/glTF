@@ -40,6 +40,8 @@
 require("runtime/dependencies/gl-matrix");
 var Montage = require("montage").Montage;
 var glTFNode = require("runtime/glTF-node").glTFNode;
+var NodeWrapper = require("runtime/node-wrapper").NodeWrapper;
+
 var Projection = require("runtime/projection").Projection;
 var Camera = require("runtime/camera").Camera;
 var Utilities = require("runtime/utilities").Utilities;
@@ -295,9 +297,7 @@ var ProgramPass = exports.ProgramPass = Montage.create(Pass, {
 
 var ScenePassRenderer = Object.create(Object.prototype, {
 
-    _pathsInfosArray: { value: null, writable: true },
-
-    _pathsInfos: { value: null, writable: true },
+    _nodeWrappers: { value: null, writable: true },
 
     _pathIDsForNodeID: { value: null, writable: true },
 
@@ -307,23 +307,71 @@ var ScenePassRenderer = Object.create(Object.prototype, {
 
     _scene: { value: null, writable: true },
 
+    _observers: { value: null, writable: true},
+
+    _viewPointMatrix: { value: null, writable: true },
+
+    addObserver: {
+        value: function(observer) {
+            if (this._observers == null) {
+                this._observers = [];
+            }
+
+            if (this._observers.indexOf(observer) === -1) {
+                this._observers.push(observer);
+            } else {
+                console.log("WARNING attempt to add 2 times the same observer in sceneRenderer")
+            }
+        }
+    },
+
+    removeObserver: {
+        value: function(observer) {
+            if (this._observers) {
+                var index = this._observers.indexOf(observer);
+                if (index !== -1) {
+                    this._observers.splice(index, 1);
+                }
+            }
+        }
+    },
+
     viewPoint: {
         get: function() {
             return this._viewPoint;
         },
         set: function(value) {
+            if (this._observers) {
+                for (var i = 0 ; i < this._observers.length ; i++) {
+                    this._observers[i].viewPointWillChange(this, this._viewPoint, value);
+                }
+            }
+
             if (this._viewPoint != value) {
                 this._viewPoint = value;
+            }
+
+            if (this._observers) {
+                for (var i = 0 ; i < this._observers.length ; i++) {
+                    this._observers[i].viewPointMatrixDidUpdate(this);
+                    this._observers[i].viewPointDidChange(this);
+                }
             }
         }
     },
 
     setupNodeAtPath: {
         value:function(node, pathID) {
+            var nodeWrapper = this._nodeWrappers[node.id];
+            if (nodeWrapper == null) {
+                nodeWrapper = Object.create(NodeWrapper).init(node);
+                this._nodeWrappers[node.id] = nodeWrapper;
+                nodeWrapper.scenePassRenderer = this;
+            }
+
 
             if (node.meshes) {
                 node.meshes.forEach( function(mesh) {
-
                     if (mesh.primitives) {
                         //go through all primitives within all meshes
                         //TODO: cache all this
@@ -333,31 +381,29 @@ var ScenePassRenderer = Object.create(Object.prototype, {
                                 if (technique) {
                                     if (technique.rootPass) {
                                         var passUniqueID = technique.rootPass.id;
-                                        var passWithPrimitives = this._primitivesPerPass[passUniqueID];
-                                        if (!passWithPrimitives) {
+                                        var passWithPrimitives = null;
+                                        var i;
+                                        for (i = 0 ; i < this._primitivesPerPass.length ; i++) {
+                                            if (this._primitivesPerPass[i].pass === passUniqueID) {
+                                                passWithPrimitives = this._primitivesPerPass[i];
+                                            }
+                                        }
+
+                                        if (passWithPrimitives == null) {
                                             passWithPrimitives = this._primitivesPerPass[passUniqueID] = {
                                                 "pass" : technique.rootPass,
                                                 "primitives" : []
                                             };
+                                            this._primitivesPerPass.push(passWithPrimitives);
                                         }
 
-                                        var pathInfo = this._pathsInfos[pathID];
-                                        if (pathInfo) {
-                                            var WORLD = WebGLRenderer.WORLD;
-                                            var WORLDVIEW = WebGLRenderer.WORLDVIEW;
-                                            var WORLDVIEWINVERSETRANSPOSE = WebGLRenderer.WORLDVIEWINVERSETRANSPOSE;
-
-                                            var renderPrimitive = {};
-                                            if (mesh.compression)
-                                                renderPrimitive.compressed = true;
-                                            renderPrimitive["primitive"] = primitive;
-                                            renderPrimitive[WORLD] = pathInfo[WORLD];
-                                            renderPrimitive[WORLDVIEWINVERSETRANSPOSE] = pathInfo[WORLDVIEWINVERSETRANSPOSE];
-                                            renderPrimitive[WORLDVIEW] = pathInfo[WORLDVIEW];
-                                            renderPrimitive.nodeID = node.id;
-
-                                            passWithPrimitives.primitives.push(renderPrimitive);
-                                        }
+                                        var renderPrimitive = {};
+                                        if (mesh.compression)
+                                            renderPrimitive.compressed = true;
+                                        renderPrimitive["primitive"] = primitive;
+                                        renderPrimitive.node = node;
+                                        renderPrimitive.nodeWrapper = nodeWrapper;
+                                        passWithPrimitives.primitives.push(renderPrimitive);
                                     }
                                 }
                             }
@@ -368,127 +414,25 @@ var ScenePassRenderer = Object.create(Object.prototype, {
         }
     },
 
-    getPathIDsForNodeID: {
-        value: function(nodeID) {
-            return this._pathIDsForNodeID[nodeID];
-        }
-    },
-
-    addPathIDForNodeID: {
-        value: function(nodeID, pathID) {
-            var pathIDs = this.pathIDsForNodeID;
-            if (!pathIDs) {
-                pathIDs = [];
-                this._pathIDsForNodeID[nodeID] = pathIDs;
-            }
-
-            pathIDs.push(pathID);
-        }
-    },
-
-    updateTransforms: {
-        value: function(interpolatingViewPoint) {
-            if (this.scene) {
-                var self = this;
-                var context = mat4.identity();
-                this.scene.rootNode.apply( function(node, parent, context) {
-                    var worldMatrix;
-                    var pathID = self._pathIDsForNodeID[node.id];
-
-                    var pathInfos = self._pathsInfos[pathID];
-                    if (pathInfos) {
-                        worldMatrix = pathInfos[WebGLRenderer.WORLD];
-                    } else {
-                        worldMatrix = parentMatrix;
-                    }
-
-                    var parentMatrix = context;
-
-                    var nodeTransform = node.transform;
-
-                    if (node.cameras) {
-                        if (node.cameras.length > 0) {
-
-                            if (interpolatingViewPoint && self.viewPoint) {
-
-                                if (self.viewPoint.id === node.id) {
-                                    var step = (Date.now() - interpolatingViewPoint.start) / 1000;
-                                    if (node.presentationTransform == null) {
-                                        node.presentationTransform = Object.create(Transform).init();
-                                    }
-                                    if ((interpolatingViewPoint.previous != null) && (step < 1)) {
-                                        var t1 = interpolatingViewPoint.previous.transform;
-                                        var t2 = nodeTransform;
-                                        t1.interpolateToTransform(t2, step, node.presentationTransform);
-                                        nodeTransform = node.presentationTransform;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    mat4.multiply(parentMatrix, nodeTransform.matrix , worldMatrix);
-
-                    node.worldTransform = worldMatrix;
-
-                    return worldMatrix;
-                } , true, context);
-            }
+    sceneWillChange: {
+        value: function(prev, scene) {
+            this._viewPointMatrix = mat4.identity();
         }
     },
 
     sceneDidChange: {
         value: function() {
             //prepares all infos
-            this._pathsInfos = {};
-            this._pathIDsForNodeID = {};
-            this._primitivesPerPass = {};
-            this._pathsInfosArray = [];
-
-            //TODO: expose list of nodes / cameras / light / material
-            var nodes = {};
-
+            this._primitivesPerPass = [];
+            this._nodeWrappers = {};
             //Assign a view point from available nodes with camera if none
             var self = this;
-            var WORLD = WebGLRenderer.WORLD;
-            var WORLDVIEW = WebGLRenderer.WORLDVIEW;
-            var WORLDVIEWINVERSETRANSPOSE = WebGLRenderer.WORLDVIEWINVERSETRANSPOSE;
-
-            var context = {};
-            context["path"] = [];
-            context[WORLD] = mat4.identity();
-            var pathCount = 0;
-
             if (!this.scene)
                 return;
             this.scene.rootNode.apply( function(node, parent, context) {
-                var worldMatrix = mat4.create();
-
-                mat4.multiply(context[WORLD], node.transform.matrix , worldMatrix);
-
-                var path = context.path.concat([node.id]);
-                var pathID = path.join('-');
-
-                nodes[node.id] = node;
-
-                var pathInfos = {};
-                pathInfos[WORLD] = worldMatrix;
-                pathInfos[WORLDVIEWINVERSETRANSPOSE] = mat3.create();
-                pathInfos[WORLDVIEW] = mat4.create();
-                pathInfos["path"] = path;
-
-                self.addPathIDForNodeID(node.id, pathID);
-                self._pathsInfos[pathID] = pathInfos;
-                self._pathsInfosArray[pathCount++] = pathInfos;
-                self.setupNodeAtPath(node, pathID);
-
-
-                var newContext = {};
-                newContext["path"] = path;
-                newContext[WORLD] = worldMatrix;
-
-                return newContext;
-            } , true, context);
+                self.setupNodeAtPath(node);
+                return null;
+            } , true, null);
         }
     },
 
@@ -498,13 +442,50 @@ var ScenePassRenderer = Object.create(Object.prototype, {
             if (!this.scene || !this.viewPoint)
                 return;
 
+            //FIXME: make a pool to avoid these object, they are temporary we don't want to re-create them each time
+            if (this.__matrix == null) {
+                this.__matrix = mat4.create();
+            }
+            if (this.__transform == null) {
+                this.__transform = Object.create(Transform).init();
+            }
+
+            if (this.viewPoint) {
+                mat4.set(this.viewPoint.worldMatrix, this.__matrix);
+                if (options != null) {
+                    var viewPointModifierMatrix = options.viewPointModifierMatrix;
+                    var interpolatingViewPoint = options.interpolatingViewPoint;
+                    if (interpolatingViewPoint) {
+                        var step = (time - interpolatingViewPoint.start) / 1000;
+                        if ((interpolatingViewPoint.previous != null) && (step < 1)) {
+                            //FIXME: this is wrong as it assumes that t1 & t2 can be interpolated but shouldn't be just like this
+                            //we should get the worldTransforms , decompose and then interpolate, here this works when both
+                            //nodes are under the root
+                            var t1 = interpolatingViewPoint.previous.transform;
+                            var t2 = this.viewPoint.transform;
+                            t1.interpolateToTransform(t2, step, this.__transform);
+                            mat4.multiply(this.viewPoint.parent.worldMatrix, this.__transform.matrix, this.__matrix);
+                        }
+                    }
+                    mat4.multiply(this.__matrix, viewPointModifierMatrix);
+                }
+                mat4.inverse(this.__matrix);
+
+                if (mat4.equal(this._viewPointMatrix, this.__matrix) === false) {
+                    mat4.set(this.__matrix, this._viewPointMatrix);
+                    if (this._observers) {
+                        for (var i = 0 ; i < this._observers.length ; i++) {
+                            this._observers[i].viewPointMatrixDidUpdate(this);
+                        }
+                    }
+                }
+            }
+
             var picking = options ? ((options.picking == true) && (options.coords)) : false;
-            var viewPointModifierMatrix = options.viewPointModifierMatrix;
             if (picking) {
                 this.pickingRenderTarget.extras.coords = options.coords;
                 webGLRenderer.bindRenderTarget(this.pickingRenderTarget);
             }
-            this.updateTransforms(options.interpolatingViewPoint);
 
             var skinnedNode = this.scene.rootNode.nodeWithPropertyNamed("instanceSkin");
             if (skinnedNode) {
@@ -514,41 +495,20 @@ var ScenePassRenderer = Object.create(Object.prototype, {
             //set projection matrix
             webGLRenderer.projectionMatrix = this.viewPoint.cameras[0].projection.matrix;
 
-            //get view matrix
-            var viewMatrix = mat4.identity();
-            if (this.viewPoint) {
-                if (this.viewPoint.worldTransform) {
-                    mat4.multiply(this.viewPoint.worldTransform, viewPointModifierMatrix, viewMatrix);
-                    mat4.inverse(viewMatrix);
-                } else {
-                    mat4.set(viewPointModifierMatrix, viewMatrix);
-                }
+            if (this.__nonOpaquePassesWithPrimitives == null) {
+                this.__nonOpaquePassesWithPrimitives = [];
             }
 
-            webGLRenderer.viewMatrix = viewMatrix;
-            //to be cached
-            var count = this._pathsInfosArray.length;
-
-            for (var i = 0 ; i < count ; i++) {
-                var pathInfos = this._pathsInfosArray[i];
-                var worldMatrix = pathInfos[webGLRenderer.WORLD];
-                var worldViewMatrix = pathInfos[webGLRenderer.WORLDVIEW];
-                var normalMatrix = pathInfos[webGLRenderer.WORLDVIEWINVERSETRANSPOSE];
-                mat4.multiply(viewMatrix, worldMatrix, worldViewMatrix);
-                mat4.toInverseMat3(worldViewMatrix, normalMatrix);
-                mat3.transpose(normalMatrix);
-            }
-
-            var nonOpaquePassesWithPrimitives = [];
-            var keys = Object.keys(this._primitivesPerPass);
-            keys.forEach( function(key) {
-                var passWithPrimitives = this._primitivesPerPass[key];
+            this.__nonOpaquePassesWithPrimitives.length = 0;
+            var idx;
+            for (idx = 0 ; idx < this._primitivesPerPass.length ; idx++) {
+                var passWithPrimitives = this._primitivesPerPass[idx];
                 var pass = picking ? this.pickingPass : passWithPrimitives.pass;
 
                 var states = pass.states;
                 //we do not check hitTesting for non-opaque elements
                 if (states.blendEnable && !picking) {
-                    nonOpaquePassesWithPrimitives.push(passWithPrimitives);
+                    this.__nonOpaquePassesWithPrimitives.push(passWithPrimitives);
                 } else {
                     if (picking && this.pickingTechnique)
                         webGLRenderer.renderPrimitivesWithPass(passWithPrimitives.primitives, pass, this.pickingTechnique.parameters, time);
@@ -556,12 +516,13 @@ var ScenePassRenderer = Object.create(Object.prototype, {
                         webGLRenderer.renderPrimitivesWithPass(passWithPrimitives.primitives, pass, null, time);
 
                 }
-            }, this);
+            }
 
             if (!picking) {
-                nonOpaquePassesWithPrimitives.forEach( function(passWithPrimitives) {
+                for (idx = 0 ; idx < this.__nonOpaquePassesWithPrimitives.length ; idx++) {
+                    var passWithPrimitives = this.__nonOpaquePassesWithPrimitives[idx];
                     webGLRenderer.renderPrimitivesWithPass(passWithPrimitives.primitives, passWithPrimitives.pass, null, time);
-                }, this);
+                }
             } else {
                 webGLRenderer.unbindRenderTarget(this.pickingRenderTarget);
 
@@ -588,6 +549,7 @@ var ScenePassRenderer = Object.create(Object.prototype, {
         },
         set: function(value) {
             if (this._scene != value) {
+                this.sceneWillChange(this._scene, value);
                 this._scene = value;
                 this.sceneDidChange();
             }
@@ -653,6 +615,7 @@ var ScenePassRenderer = Object.create(Object.prototype, {
             this.pickingRenderTarget = this.createPickingRenderTargetIfNeeded();
             this.pickingRenderTarget.width = 512;
             this.pickingRenderTarget.height = 512;
+            this._nodeWrappers = {};
             return this;
         }
     }
@@ -661,53 +624,53 @@ var ScenePassRenderer = Object.create(Object.prototype, {
 
 var ScenePass = exports.ScenePass = Object.create(Pass, {
 
-    _sceneRenderer: { value: null, writable: true },
+    _scenePassRenderer: { value: null, writable: true },
 
-    createSceneRendererIfNeeded: {
+    createScenePassRendererIfNeeded: {
         value: function() {
-            if (!this._sceneRenderer) {
-                this._sceneRenderer = Object.create(ScenePassRenderer).init();
+            if (!this._scenePassRenderer) {
+                this._scenePassRenderer = Object.create(ScenePassRenderer).init();
             }
         }
     },
 
-    sceneRenderer: {
+    scenePassRenderer: {
         get: function() {
-            this.createSceneRendererIfNeeded();
-            return this._sceneRenderer;
+            this.createScenePassRendererIfNeeded();
+            return this._scenePassRenderer;
         },
         set: function(value) {
-            this.createSceneRendererIfNeeded();
-            if (this._sceneRenderer != value) {
-                this._sceneRenderer = value;
+            this.createScenePassRendererIfNeeded();
+            if (this._scenePassRenderer != value) {
+                this._scenePassRenderer = value;
             }
         }
     },
 
     viewPoint: {
         get: function() {
-            return this.sceneRenderer ? this.sceneRenderer.viewPoint : null;
+            return this.scenePassRenderer ? this.scenePassRenderer.viewPoint : null;
         },
         set: function(viewpoint) {
-            if (this.sceneRenderer) {
-                this.sceneRenderer.viewPoint = viewpoint;
+            if (this.scenePassRenderer) {
+                this.scenePassRenderer.viewPoint = viewpoint;
             }
         }
     },
 
     scene: {
         get: function() {
-            return this.sceneRenderer.scene;
+            return this.scenePassRenderer.scene;
         },
         set: function(value) {
-            this.sceneRenderer.scene = value;
+            this.scenePassRenderer.scene = value;
         }
     },
 
     execute: {
         value: function(webGLRenderer, time, options) {
             //pickingRenderTarget
-            this.sceneRenderer.render(webGLRenderer, time, options);
+            this.scenePassRenderer.render(webGLRenderer, time, options);
         }
     },
 

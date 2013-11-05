@@ -78,7 +78,7 @@ var global = window;
         this.minDistance = 16;
         this.distanceStep = 1.0;
         this.constrainDistance = true;
-
+        this.ignoreEvents = false;
         this._dirty = true;
 
         this._hookEvents(element);
@@ -143,7 +143,7 @@ var global = window;
 
         element.addEventListener('touchmove', function(event) {
             var touches = event.touches;
-            if(moving) {
+            if(moving && !ignoreEvents) {
                 var xDelta = touches[0].pageX  - lastX,
                     yDelta = touches[0].pageY  - lastY;
 
@@ -266,10 +266,18 @@ var global = window;
             var mv = this._viewMat;
             mat4.identity(mv);
             mat4.translate(mv, this._distance);
-            mat4.rotateX(mv, this.orbitX);
-            mat4.rotateY(mv, this.orbitY);
 
-            //HACK: to preserve legacy behavior, this is to be removed.
+            //This to preserve some legacy behaivor, this will be cleanup when new cameraoController comes in
+            if (this._rideMode == false) {
+                mat4.rotateX(mv, this.orbitX);
+                mat4.rotateY(mv, this.orbitY);
+            } else {
+                mat4.rotateY(mv, this.orbitY);
+                mat4.rotateX(mv, this.orbitX);
+            }
+
+
+            //HACK: also to preserve legacy behavior, this is to be removed.
             if (this._rideMode == false) {
                 mat4.rotateX(mv, -Math.PI * 0.5);
             }
@@ -366,6 +374,7 @@ var global = window;
         }, false);
     };
 
+
     FlyingCamera.prototype.rotateView = function (xDelta, yDelta) {
         var rot = this._rotMat;
 
@@ -373,8 +382,13 @@ var global = window;
             this._angles[1] += xDelta;
             // Keep our rotation in the range of [0, 2*PI]
             // (Prevents numeric instability if you spin around a LOT.)
+
+            if(this.constrainYRotation) {
+                this._angles[1] = Math.min(Math.max(this._angles[1], this.minYRotation), this.maxYRotation);
+            }
+
             while (this._angles[1] < 0) {
-                this._angles[1] += Math.PI * 2.0;
+                    this._angles[1] += Math.PI * 2.0;
             }
             while (this._angles[1] >= Math.PI * 2.0) {
                 this._angles[1] -= Math.PI * 2.0;
@@ -388,6 +402,8 @@ var global = window;
             if (this._angles[0] > Math.PI * 0.5) {
                 this._angles[0] = Math.PI * 0.5;
             }
+
+
                 
             // Update the directional matrix
             mat4.identity(rot);
@@ -425,9 +441,9 @@ var global = window;
             var mv = this._viewMat;
             mat4.identity(mv);
 
-            mat4.rotateX(mv, -Math.PI * 0.5);
+            //mat4.rotateX(mv, -Math.PI * 0.5);
+            mat4.rotateY(mv, this._angles[1]);
             mat4.rotateX(mv, this._angles[0]);
-            mat4.rotateZ(mv, this._angles[1]);
             mat4.translate(mv, [-this._position[0], -this._position[1], -this._position[2]]);
             this._dirty = false;
         }

@@ -98,9 +98,7 @@ var global = window;
                     return path;
                 }
 
-                var pathComponents = path.split("/");
-                var lastPathComponent = pathComponents.pop();
-                return this.baseURL + path;//lastPathComponent;
+                return this.baseURL + path;
             }
         },
 
@@ -245,9 +243,6 @@ var global = window;
                             break;
                         }
                     } else {
-                        if (typeof description.type === "undefined") {
-                            description.type = type;
-                        }
 
                         if (methodForType[type]) {
                             if (methodForType[type].call(this, entryID, description, this._state.userInfo) === false) {

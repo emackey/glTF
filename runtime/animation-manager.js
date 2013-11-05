@@ -27,6 +27,40 @@ var Animation = require("runtime/animation").Animation;
 
 exports.AnimationManager = Object.create(Base, {
 
+    startTime: {
+        get: function() {
+            if (this.animations) {
+                if (this.animations.length > 0) {
+                    var startTime = this.animations[0].startTime;
+                    for (var i = 1 ; i < this.animations.length ; i++ ) {
+                        if (this.animations[i].startTime < startTime) {
+                            startTime = this.animations[i].startTime;
+                        }
+                    }
+                    return startTime;
+                }
+                return 0;
+            }
+        }
+    },
+
+    endTime: {
+        get: function() {
+            if (this.animations) {
+                if (this.animations.length > 0) {
+                    var endTime = this.animations[0].endTime;
+                    for (var i = 1 ; i < this.animations.length ; i++ ) {
+                        if (this.animations[i].endTime > endTime) {
+                            endTime = this.animations[i].endTime;
+                        }
+                    }
+                    return endTime;
+                }
+                return 0;
+            }
+        }
+    },
+
     _animations: { value: null, writable: true },
 
     animations: {
@@ -40,19 +74,43 @@ exports.AnimationManager = Object.create(Base, {
         }
     },
 
-    hasAnimation: {
-      value: function(targetUID) {
-          //it is a forEach, because eventually we will return all the animations for a given target.
-            var animated = false;
-            this._animations.forEach(function(animation) {
-                animation.channels.forEach(function(channel) {
-                    if (targetUID === channel.target.baseId) {
-                        animated = true;
-                    }
+    targets: {
+        get: function() {
+            var targets = [];
+            if (this._animations != null) {
+                this._animations.forEach(function(animation) {
+                    animation.channels.forEach(function(channel) {
+                        targets.push(channel.target.id);
+                    }, this);
                 }, this);
-          }, this);
-          return animated;
-      }
+            }
+            return targets;
+        }
+    },
+
+    hasAnimation: {
+      value: function(targetUID, targets) {
+          //it is a forEach, because eventually we will return all the animations for a given target.
+          var animated = false;
+          if (this._animations == null)
+              return false;
+          if (targets == null)
+              targets = this.targets;
+
+          return targets.indexOf(targetUID) !== -1;
+        }
+    },
+
+    nodeHasAnimatedAncestor: {
+        value: function(node) {
+            do {
+                if (this.hasAnimation(node.id)) {
+                    return true;
+                }
+                node = node.parent;
+            } while (node != null);
+            return false;
+        }
     },
 
     updateTargetsAtTime: {

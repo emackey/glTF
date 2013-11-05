@@ -26,7 +26,7 @@
 
 require("runtime/dependencies/gl-matrix");
 var GLSLProgram = require("runtime/glsl-program").GLSLProgram;
-var ResourceManager = require("runtime/helpers/resource-manager").ResourceManager;
+var WebGLTFResourceManager = require("runtime/helpers/resource-manager").WebGLTFResourceManager;
 
 exports.WebGLRenderer = Object.create(Object.prototype, {
 
@@ -60,8 +60,6 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
 
     _debugProgram: { value: null, writable: true },
 
-    _lambertProgram: { value: null, writable: true },
-
     _resourceManager: { value: null, writable: true },
 
     _webGLContext: { value : null, writable: true },
@@ -75,211 +73,15 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
 
     specularColor: { value: [1, 1, 1], writable: true },
 
-    _GLEnumFromString: {
-        value: null, writable: true
-    },
-
     GLContextDidChange: {
         value: function(value) {
-            this._GLEnumFromString = [];
-            var GL = this.webGLContext;
-            //var maxUniforms = GL.getParameter(GL.MAX_VERTEX_UNIFORM_VECTORS);
-
-            /* BeginMode */
-            this._GLEnumFromString["POINTS"] = GL.POINTS;
-            this._GLEnumFromString["LINES"] = GL.LINES;
-            this._GLEnumFromString["LINE_LOOP"] = GL.LINE_LOOP;
-            this._GLEnumFromString["LINE_STRIP"] = GL.LINE_STRIP;
-            this._GLEnumFromString["TRIANGLES"] = GL.TRIANGLES;
-            this._GLEnumFromString["TRIANGLES"] = GL.TRIANGLES;
-            this._GLEnumFromString["TRIANGLE_STRIP"] = GL.TRIANGLE_STRIP;
-            this._GLEnumFromString["TRIANGLE_FAN"] = GL.TRIANGLE_FAN;
-
-            /* BlendingFactorDest */
-            this._GLEnumFromString["ZERO"] = GL.ZERO;
-            this._GLEnumFromString["ONE"] = GL.ONE;
-            this._GLEnumFromString["SRC_COLOR"] = GL.SRC_COLOR;
-            this._GLEnumFromString["ONE_MINUS_SRC_COLOR"] = GL.ONE_MINUS_SRC_COLOR;
-            this._GLEnumFromString["SRC_ALPHA"] = GL.SRC_ALPHA;
-            this._GLEnumFromString["ONE_MINUS_SRC_ALPHA"] = GL.ONE_MINUS_SRC_ALPHA;
-            this._GLEnumFromString["DST_ALPHA"] = GL.DST_ALPHA;
-            this._GLEnumFromString["ONE_MINUS_DST_ALPHA"] = GL.ONE_MINUS_DST_ALPHA;
-
-            /* BlendingFactorSrc */
-            this._GLEnumFromString["DST_COLOR"] = GL.DST_COLOR;
-            this._GLEnumFromString["ONE_MINUS_DST_COLOR"] = GL.ONE_MINUS_DST_COLOR;
-            this._GLEnumFromString["SRC_ALPHA_SATURATE"] = GL.SRC_ALPHA_SATURATE;
-
-            /* BlendEquationSeparate */
-            this._GLEnumFromString["FUNC_ADD"] = GL.FUNC_ADD;
-            this._GLEnumFromString["BLEND_EQUATION"] = GL.BLEND_EQUATION;
-            this._GLEnumFromString["BLEND_EQUATION_RGB"] = GL.BLEND_EQUATION_RGB;
-            this._GLEnumFromString["BLEND_EQUATION_ALPHA"] = GL.BLEND_EQUATION_ALPHA;
-
-            /* BlendSubtract */
-            this._GLEnumFromString["FUNC_SUBTRACT"] = GL.FUNC_SUBTRACT;
-            this._GLEnumFromString["FUNC_REVERSE_SUBTRACT"] = GL.FUNC_REVERSE_SUBTRACT;
-
-            /* Separate Blend Functions */
-            this._GLEnumFromString["BLEND_DST_RGB"] = GL.BLEND_DST_RGB;
-            this._GLEnumFromString["BLEND_SRC_RGB"] = GL.BLEND_SRC_RGB;
-            this._GLEnumFromString["BLEND_DST_ALPHA"] = GL.BLEND_DST_ALPHA;
-            this._GLEnumFromString["BLEND_SRC_ALPHA"] = GL.BLEND_SRC_ALPHA;
-            this._GLEnumFromString["CONSTANT_COLOR"] = GL.CONSTANT_COLOR;
-            this._GLEnumFromString["ONE_MINUS_CONSTANT_COLOR"] = GL.ONE_MINUS_CONSTANT_COLOR;
-            this._GLEnumFromString["CONSTANT_ALPHA"] = GL.CONSTANT_ALPHA;
-            this._GLEnumFromString["ONE_MINUS_CONSTANT_ALPHA"] = GL.ONE_MINUS_CONSTANT_ALPHA;
-            this._GLEnumFromString["BLEND_COLOR"] = GL.BLEND_COLOR;
-
-            /* Buffer Objects */
-            this._GLEnumFromString["ARRAY_BUFFER"] = GL.ARRAY_BUFFER;
-            this._GLEnumFromString["ELEMENT_ARRAY_BUFFER"] = GL.ELEMENT_ARRAY_BUFFER;
-            this._GLEnumFromString["ARRAY_BUFFER_BINDING"] = GL.ARRAY_BUFFER_BINDING;
-            this._GLEnumFromString["ELEMENT_ARRAY_BUFFER_BINDING"] = GL.ELEMENT_ARRAY_BUFFER_BINDING;
-
-            this._GLEnumFromString["STREAM_DRAW"] = GL.STREAM_DRAW;
-            this._GLEnumFromString["STATIC_DRAW"] = GL.STATIC_DRAW;
-            this._GLEnumFromString["DYNAMIC_DRAW"] = GL.DYNAMIC_DRAW;
-
-            this._GLEnumFromString["BUFFER_SIZE"] = GL.BUFFER_SIZE;
-            this._GLEnumFromString["BUFFER_USAGE"] = GL.BUFFER_USAGE;
-
-            this._GLEnumFromString["CURRENT_VERTEX_ATTRIB"] = GL.CURRENT_VERTEX_ATTRIB;
-
-            /* CullFaceMode */
-            this._GLEnumFromString["FRONT"] = GL.FRONT;
-            this._GLEnumFromString["BACK"] = GL.BACK;
-            this._GLEnumFromString["FRONT_AND_BACK"] = GL.FRONT_AND_BACK;
-
-            /* EnableCap */
-            this._GLEnumFromString["CULL_FACE"] = GL.CULL_FACE;
-            this._GLEnumFromString["BLEND"] = GL.BLEND;
-            this._GLEnumFromString["STENCIL_TEST"] = GL.STENCIL_TEST;
-            this._GLEnumFromString["DEPTH_TEST"] = GL.DEPTH_TEST;
-            this._GLEnumFromString["SCISSOR_TEST"] = GL.SCISSOR_TEST;
-            this._GLEnumFromString["POLYGON_OFFSET_FILL"] = GL.POLYGON_OFFSET_FILL;
-            this._GLEnumFromString["SAMPLE_ALPHA_TO_COVERAGE"] = GL.SAMPLE_ALPHA_TO_COVERAGE;
-            this._GLEnumFromString["SAMPLE_COVERAGE"] = GL.SAMPLE_COVERAGE;
-
-            /* FrontFaceDirection */
-            this._GLEnumFromString["CW"] = GL.CW;
-            this._GLEnumFromString["CCW"] = GL.CCW;
-
-            /* DataType */
-            this._GLEnumFromString["BYTE"] = GL.BYTE;
-            this._GLEnumFromString["UNSIGNED_BYTE"] = GL.UNSIGNED_BYTE;
-            this._GLEnumFromString["SHORT"] = GL.SHORT;
-            this._GLEnumFromString["UNSIGNED_SHORT"] = GL.UNSIGNED_SHORT;
-            this._GLEnumFromString["INT"] = GL.INT;
-            this._GLEnumFromString["UNSIGNED_INT"] = GL.UNSIGNED_INT;
-            this._GLEnumFromString["FLOAT"] = GL.FLOAT;
-
-            /* PixelFormat */
-            this._GLEnumFromString["DEPTH_COMPONENT"] = GL.DEPTH_COMPONENT;
-            this._GLEnumFromString["ALPHA"] = GL.ALPHA;
-            this._GLEnumFromString["RGB"] = GL.RGB;
-            this._GLEnumFromString["RGBA"] = GL.RGBA;
-            this._GLEnumFromString["LUMINANCE"] = GL.LUMINANCE;
-            this._GLEnumFromString["LUMINANCE_ALPHA"] = GL.LUMINANCE_ALPHA;
-
-            /* PixelType */
-            /*      UNSIGNED_BYTE */
-            this._GLEnumFromString["UNSIGNED_SHORT_4_4_4_4"] = GL.UNSIGNED_SHORT_4_4_4_4;
-            this._GLEnumFromString["UNSIGNED_SHORT_5_5_5_1"] = GL.UNSIGNED_SHORT_5_5_5_1;
-            this._GLEnumFromString["UNSIGNED_SHORT_5_6_5"] = GL.UNSIGNED_SHORT_5_6_5;
-
-            /* StencilFunction */
-            this._GLEnumFromString["NEVER"] = GL.NEVER;
-            this._GLEnumFromString["LESS"] = GL.LESS;
-            this._GLEnumFromString["EQUAL"] = GL.EQUAL;
-            this._GLEnumFromString["LEQUAL"] = GL.LEQUAL;
-            this._GLEnumFromString["GREATER"] = GL.GREATER;
-            this._GLEnumFromString["NOTEQUAL"] = GL.NOTEQUAL;
-            this._GLEnumFromString["GEQUAL"] = GL.GEQUAL;
-            this._GLEnumFromString["ALWAYS"] = GL.ALWAYS;
-
-            /* StencilOp */
-            this._GLEnumFromString["KEEP"] = GL.KEEP;
-            this._GLEnumFromString["REPLACE"] = GL.REPLACE;
-            this._GLEnumFromString["INCR"] = GL.INCR;
-            this._GLEnumFromString["DECR"] = GL.DECR;
-            this._GLEnumFromString["INVERT"] = GL.INVERT;
-            this._GLEnumFromString["INCR_WRAP"] = GL.INCR_WRAP;
-            this._GLEnumFromString["DECR_WRAP"] = GL.DECR_WRAP;
-
-            /* TextureMagFilter */
-            this._GLEnumFromString["NEAREST"] = GL.NEAREST;
-            this._GLEnumFromString["LINEAR"] = GL.LINEAR;
-
-            /* TextureMinFilter */
-            this._GLEnumFromString["NEAREST_MIPMAP_NEAREST"] = GL.NEAREST_MIPMAP_NEAREST;
-            this._GLEnumFromString["LINEAR_MIPMAP_NEAREST"] = GL.LINEAR_MIPMAP_NEAREST;
-            this._GLEnumFromString["NEAREST_MIPMAP_LINEAR"] = GL.NEAREST_MIPMAP_LINEAR;
-            this._GLEnumFromString["LINEAR_MIPMAP_LINEAR"] = GL.LINEAR_MIPMAP_LINEAR;
-
-            /* TextureParameterName */
-            this._GLEnumFromString["TEXTURE_MAG_FILTER"] = GL.TEXTURE_MAG_FILTER;
-            this._GLEnumFromString["TEXTURE_MIN_FILTER"] = GL.TEXTURE_MIN_FILTER;
-            this._GLEnumFromString["TEXTURE_WRAP_S"] = GL.TEXTURE_WRAP_S;
-            this._GLEnumFromString["TEXTURE_WRAP_T"] = GL.TEXTURE_WRAP_T;
-
-            /* TextureTarget */
-            this._GLEnumFromString["TEXTURE_CUBE_MAP"] = GL.TEXTURE_CUBE_MAP;
-            this._GLEnumFromString["TEXTURE_CUBE_MAP_POSITIVE_X"] = GL.TEXTURE_CUBE_MAP_POSITIVE_X;
-            this._GLEnumFromString["TEXTURE_CUBE_MAP_NEGATIVE_X"] = GL.TEXTURE_CUBE_MAP_NEGATIVE_X;
-            this._GLEnumFromString["TEXTURE_CUBE_MAP_POSITIVE_Y"] = GL.TEXTURE_CUBE_MAP_POSITIVE_Y;
-            this._GLEnumFromString["TEXTURE_CUBE_MAP_NEGATIVE_Y"] = GL.TEXTURE_CUBE_MAP_NEGATIVE_Y;
-            this._GLEnumFromString["TEXTURE_CUBE_MAP_POSITIVE_Z"] = GL.TEXTURE_CUBE_MAP_POSITIVE_Z;
-            this._GLEnumFromString["TEXTURE_CUBE_MAP_NEGATIVE_Z"] = GL.TEXTURE_CUBE_MAP_NEGATIVE_Z;
-            this._GLEnumFromString["MAX_CUBE_MAP_TEXTURE_SIZE"] = GL.MAX_CUBE_MAP_TEXTURE_SIZE;
-
-            /* TextureWrapMode */
-            this._GLEnumFromString["REPEAT"] = GL.REPEAT;
-            this._GLEnumFromString["CLAMP_TO_EDGE"] = GL.CLAMP_TO_EDGE;
-            this._GLEnumFromString["MIRRORED_REPEAT"] = GL.MIRRORED_REPEAT;
-
-            /* Uniform Types */
-            this._GLEnumFromString["FLOAT_VEC2"] = GL.FLOAT_VEC2;
-            this._GLEnumFromString["FLOAT_VEC3"] = GL.FLOAT_VEC3;
-            this._GLEnumFromString["FLOAT_VEC4"] = GL.FLOAT_VEC4;
-            this._GLEnumFromString["INT_VEC2"] = GL.INT_VEC2;
-            this._GLEnumFromString["INT_VEC3"] = GL.INT_VEC3;
-            this._GLEnumFromString["INT_VEC4"] = GL.INT_VEC4;
-            this._GLEnumFromString["BOOL"] = GL.BOOL;
-            this._GLEnumFromString["BOOL_VEC2"] = GL.BOOL_VEC2;
-            this._GLEnumFromString["BOOL_VEC3"] = GL.BOOL_VEC3;
-            this._GLEnumFromString["BOOL_VEC3"] = GL.BOOL_VEC3;
-            this._GLEnumFromString["BOOL_VEC4"] = GL.BOOL_VEC4;
-            this._GLEnumFromString["FLOAT_VEC2"] = GL.FLOAT_VEC2;
-            this._GLEnumFromString["FLOAT_VEC3"] = GL.FLOAT_VEC3;
-            this._GLEnumFromString["FLOAT_VEC4"] = GL.FLOAT_VEC4;
-            this._GLEnumFromString["INT_VEC2"] = GL.INT_VEC2;
-            this._GLEnumFromString["INT_VEC3"] = GL.INT_VEC3;
-            this._GLEnumFromString["INT_VEC4"] = GL.INT_VEC4;
-            this._GLEnumFromString["FLOAT_MAT2"] = GL.FLOAT_MAT2;
-            this._GLEnumFromString["FLOAT_MAT3"] = GL.FLOAT_MAT3;
-            this._GLEnumFromString["FLOAT_MAT4"] = GL.FLOAT_MAT4;
-
-            /* Framebuffer Object. */
-            this._GLEnumFromString["RGBA4"] = GL.RGBA4;
-            this._GLEnumFromString["RGB5_A1"] = GL.RGB5_A1;
-            this._GLEnumFromString["RGB565"] = GL.RGB565;
-            this._GLEnumFromString["DEPTH_COMPONENT16"] = GL.DEPTH_COMPONENT16;
-            this._GLEnumFromString["STENCIL_INDEX"] = GL.STENCIL_INDEX;
-            this._GLEnumFromString["STENCIL_INDEX8"] = GL.STENCIL_INDEX8;
-            this._GLEnumFromString["DEPTH_STENCIL"] = GL.DEPTH_STENCIL;
         }
     },
 
     initWithWebGLContext: {
         value: function(value) {
             this.webGLContext = value;
-            return this;
-        }
-    },
-
-    init: {
-        value: function() {
+            this._states = {};
             return this;
         }
     },
@@ -334,39 +136,6 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
         }
     },
 
-    //FIXME:needs to be updated to reflect latest changes
-    lambertProgram: {
-        get: function() {
-            if (!this._lambertProgram) {
-                this._lambertProgram = Object.create(GLSLProgram);
-
-                var lambertVS = "precision highp float;" +
-                    "attribute vec3 vert;"  +
-                    "attribute vec3 normal; " +
-                    "varying vec3 v_normal; " +
-                    "uniform mat4 u_mvMatrix; " +
-                    "uniform mat3 u_normalMatrix; " +
-                    "uniform mat4 u_projMatrix; " +
-                    "void main(void) { " +
-                    "v_normal = normalize(u_normalMatrix * normal); " +
-                    "gl_Position = u_projMatrix * u_mvMatrix * vec4(vert,1.0); }"
-
-                var lambertFS = "precision highp float;" +
-                    " uniform vec3 color;" +
-                    " varying vec3 v_normal;" +
-                    " void main(void) { " +
-                    " vec3 normal = normalize(v_normal); " +
-                    " float lambert = max(dot(normal,vec3(0.,0.,1.)), 0.);" +
-                    " gl_FragColor = vec4(color.xyz *lambert, 1.); }";
-
-                this._lambertProgram.initWithShaders( { "x-shader/x-vertex" : lambertVS , "x-shader/x-fragment" : lambertFS } );
-                if (!this._lambertProgram.build(this.webGLContext)) {
-                    console.log(this._lambertProgram.errorLogs);
-                }
-            }
-            return this._lambertProgram;
-        }
-    },
 
     webGLContext: {
         get: function() {
@@ -382,7 +151,7 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
         get: function() {
             if (!this._resourceManager) {
                 //FIXME: this should be in init
-                this._resourceManager = Object.create(ResourceManager);
+                this._resourceManager = Object.create(WebGLTFResourceManager);
                 this._resourceManager.init();
             }
 
@@ -402,16 +171,13 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
             },
 
             //should be called only once
-            convert: function (resource, ctx) {
-                var gl = this.webGLContext;
+            convert: function (source, resource, ctx) {
+                var gl = ctx;
                 var previousBuffer = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
-
                 var glResource =  gl.createBuffer();
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, glResource);
-
                 gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, resource, gl.STATIC_DRAW);
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, previousBuffer);
-
                 return glResource;
             },
 
@@ -477,13 +243,15 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
             this.resourceManager.setResource(primitive.semantics["NORMAL"].id, glResource);
             primitive.semantics["NORMAL"] = { "id" : primitive.semantics["NORMAL"].id, "count" : count, "byteStride" : 12}; //HACK
 
-            glResource =  gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, glResource);
-            gl.bufferData(gl.ARRAY_BUFFER, texcoords, gl.STATIC_DRAW);
-            glResource.componentType = gl.FLOAT;
-            glResource.componentsPerAttribute = 2;
-            this.resourceManager.setResource(primitive.semantics["TEXCOORD_0"].id, glResource);
-            primitive.semantics["TEXCOORD_0"] = { "id" : primitive.semantics["TEXCOORD_0"].id, "count" : count, "byteStride" : 8}; //HACK
+            if (texcoords.length > 0) {
+                glResource =  gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, glResource);
+                gl.bufferData(gl.ARRAY_BUFFER, texcoords, gl.STATIC_DRAW);
+                glResource.componentType = gl.FLOAT;
+                glResource.componentsPerAttribute = 2;
+                this.resourceManager.setResource(primitive.semantics["TEXCOORD_0"].id, glResource);
+                primitive.semantics["TEXCOORD_0"] = { "id" : primitive.semantics["TEXCOORD_0"].id, "count" : count, "byteStride" : 8}; //HACK
+            }
 
             gl.bindBuffer(gl.ARRAY_BUFFER, previousBuffer);
 
@@ -492,26 +260,72 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
     },
 
     setupCompressedMesh2: {
-        value: function(mesh, vertexCount, positions, normals, texcoords, indices) {
-            var primitive = mesh.primitives[0];
+        value: function(mesh, vertexCount, positions, normals, ifs, floatAttributesIndexes, indices) {
             var gl = this.webGLContext;
             //create indices
-            var previousBuffer = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
-            var glResource =  gl.createBuffer();
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, glResource);
-            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, previousBuffer);
+            //var previousBuffer = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
 
-            glResource.count = indices.length;
-            this.resourceManager.setResource(primitive.indices.id, glResource);
-            primitive.indices = { "id" : primitive.indices.id, "count" : glResource.count }; //HACK
+            var count = 0;
+            var index = 0;
+            var primitives = mesh.primitives;
 
-            var count = vertexCount;
+            //setup indices
+            for (var i = 0 ; i < primitives.length ; i++) {
+                //First we set the indices
+                var primitive = mesh.primitives[i];
+                var id = primitive.indices.id;
+                count = primitive.indices.count;
+                var primitiveIndices = new Int16Array(indices.subarray(index, index + count ));
 
-            positions = new Float32Array(positions, 0, count * 3);
-            normals = new Float32Array(normals, 0, count * 3);
-            texcoords = new Float32Array(texcoords, 0, count * 2);
+                var glResource =  gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, glResource);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, primitiveIndices, gl.STATIC_DRAW);
 
+                this.resourceManager.setResource(id, glResource);
+                glResource.count = count;
+                primitive.indices = { "id" : id, "count" : glResource.count };
+                index += count;
+                //Then we setup vertex attributes with potentially multiple set, like color and texcoord
+            }
+
+            var semantic;
+            var idToSemantic = {};
+            //now setup vertex attributes, to do so we build a map of id->vertexAttribute for all used sources in the mesh
+            for (var i = 0 ; i < primitives.length ; i++) {
+                //First we set the indices
+                var primitive = mesh.primitives[i];
+                for (semantic in primitive.semantics) {
+                    var vertexAttribute = primitive.semantics[semantic];
+                    idToSemantic[vertexAttribute.baseId] = semantic;
+                }
+            }
+
+            for (var attributeId in idToSemantic) {
+                var vertexAttributeIndex = floatAttributesIndexes[attributeId];
+                if (vertexAttributeIndex != null) {
+                    var attr = ifs.GetFloatAttribute(vertexAttributeIndex);
+                    var semantic = idToSemantic[attributeId];
+                    if (semantic === "JOINT") {
+                        for (var k = 0 ; k < attr.length ; k++) {
+                            attr[k] = Math.floor(attr[k] + 0.5);
+                        }
+                    }
+
+                    var componentsPerAttribute =ifs.GetFloatAttributeDim(vertexAttributeIndex);
+                    glResource =  gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, glResource);
+                    gl.bufferData(gl.ARRAY_BUFFER, attr, gl.STATIC_DRAW);
+                    glResource.componentType = gl.FLOAT;
+                    glResource.componentsPerAttribute = componentsPerAttribute;
+                    this.resourceManager.setResource(primitive.semantics[semantic].id, glResource);
+                    primitive.semantics[semantic] = { "id" : primitive.semantics[semantic].id, "count" : count, "byteStride" : componentsPerAttribute * 4};
+                }
+            }
+
+            //if (previousBuffer)
+            //    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER_BINDING, previousBuffer);
+
+            count = vertexCount;
             previousBuffer = gl.getParameter(gl.ARRAY_BUFFER_BINDING);
 
             glResource =  gl.createBuffer();
@@ -523,61 +337,50 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
             this.resourceManager.setResource(primitive.semantics["POSITION"].id, glResource);
             primitive.semantics["POSITION"] = { "id" : primitive.semantics["POSITION"].id , "count" : count, "byteStride" : 12}; //HACK
 
-
-            glResource =  gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, glResource);
-            gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
-            glResource.componentType = gl.FLOAT;
-            glResource.componentsPerAttribute = 3;
-
-            this.resourceManager.setResource(primitive.semantics["NORMAL"].id, glResource);
-            primitive.semantics["NORMAL"] = { "id" : primitive.semantics["NORMAL"].id, "count" : count, "byteStride" : 12}; //HACK
-
-            glResource =  gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, glResource);
-            gl.bufferData(gl.ARRAY_BUFFER, texcoords, gl.STATIC_DRAW);
-            glResource.componentType = gl.FLOAT;
-            glResource.componentsPerAttribute = 2;
-            this.resourceManager.setResource(primitive.semantics["TEXCOORD_0"].id, glResource);
-            primitive.semantics["TEXCOORD_0"] = { "id" : primitive.semantics["TEXCOORD_0"].id, "count" : count, "byteStride" : 8}; //HACK
+            if (normals != null) {
+                glResource =  gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, glResource);
+                gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+                glResource.componentType = gl.FLOAT;
+                glResource.componentsPerAttribute = 3;
+                this.resourceManager.setResource(primitive.semantics["NORMAL"].id, glResource);
+                primitive.semantics["NORMAL"] = { "id" : primitive.semantics["NORMAL"].id, "count" : count, "byteStride" : 12}; //HACK
+            }
 
             gl.bindBuffer(gl.ARRAY_BUFFER, previousBuffer);
-
-
         }
     },
-
 
     vertexAttributeBufferDelegate: {
         value: {
 
             _componentTypeForGLType: function(gl, glType) {
                 switch (glType) {
-                    case "FLOAT" :
-                    case "FLOAT_VEC2" :
-                    case "FLOAT_VEC3" :
-                    case "FLOAT_VEC4" :
+                    case gl.FLOAT:
+                    case gl.FLOAT_VEC2:
+                    case gl.FLOAT_VEC3:
+                    case gl.FLOAT_VEC4:
                         return gl.FLOAT;
-                    case "UNSIGNED_BYTE":
+                    case gl.UNSIGNED_BYTE:
                         return gl.UNSIGNED_BYTE;
-                    case "UNSIGNED_SHORT" :
+                    case gl.UNSIGNED_SHORT:
                         return gl.UNSIGNED_SHORT;
                     default:
                         return null;
                 }
             },
 
-            _componentsPerElementForGLType: function(glType) {
+            _componentsPerElementForGLType: function(gl, glType) {
                 switch (glType) {
-                    case "FLOAT" :
-                    case "UNSIGNED_BYTE" :
-                    case "UNSIGNED_SHORT" :
+                    case gl.FLOAT:
+                    case gl.UNSIGNED_BYTE:
+                    case gl.UNSIGNED_SHORT:
                         return 1;
-                    case "FLOAT_VEC2" :
+                    case gl.FLOAT_VEC2:
                         return 2;
-                    case "FLOAT_VEC3" :
+                    case gl.FLOAT_VEC3:
                         return 3;
-                    case "FLOAT_VEC4" :
+                    case gl.FLOAT_VEC4:
                         return 4;
                     default:
                         return null;
@@ -592,10 +395,9 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                 console.log("ERROR:vertexAttributeBufferDelegate:"+errorCode+" :"+info);
             },
 
-            convert: function (resource, ctx) {
-
-                var attribute = ctx;
-                var gl = this.webGLContext;
+            convert: function (source, resource, ctx) {
+                var attribute = source;
+                var gl = ctx;
                 var previousBuffer = gl.getParameter(gl.ARRAY_BUFFER_BINDING);
 
                 var glResource =  gl.createBuffer();
@@ -603,7 +405,7 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                 //FIXME: use bufferSubData to prevent alloc
                 gl.bufferData(gl.ARRAY_BUFFER, resource, gl.STATIC_DRAW);
                 glResource.componentType = this._componentTypeForGLType(gl, attribute.type);
-                glResource.componentsPerAttribute = this._componentsPerElementForGLType(attribute.type);
+                glResource.componentsPerAttribute = this._componentsPerElementForGLType(gl, attribute.type);
                 gl.bindBuffer(gl.ARRAY_BUFFER, previousBuffer);
                 return glResource;
             },
@@ -615,41 +417,12 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
 
     textureDelegate: {
         value: {
-            webGLContext:  {
-                value: null, writable: true
-            },
-
             getGLFilter: function(filter) {
-                var gl = this.webGLContext;
-                var glFilter = gl.LINEAR;
-                if (filter === "LINEAR") {
-                    glFilter = gl.LINEAR;
-                } else if (filter === "NEAREST") {
-                    glFilter = gl.NEAREST;
-                } else if (filter === "NEAREST_MIPMAP_NEAREST") {
-                    glFilter = gl.NEAREST_MIPMAP_NEAREST;
-                } else if (filter === "LINEAR_MIPMAP_NEAREST") {
-                    glFilter = gl.LINEAR_MIPMAP_NEAREST;
-                } else if (filter === "NEAREST_MIPMAP_LINEAR") {
-                    glFilter = gl.NEAREST_MIPMAP_LINEAR;
-                } else if (filter === "LINEAR_MIPMAP_LINEAR") {
-                    glFilter = gl.LINEAR_MIPMAP_LINEAR;
-                }
-
-                return glFilter;
+                return filter == null ? WebGLRenderingContext.LINEAR : filter;
             },
 
             getGLWrapMode: function(wrapMode) {
-                var gl = this.webGLContext;
-                var glWrapMode = gl.REPEAT;
-                if (wrapMode === "REPEAT") {
-                    glWrapMode = gl.REPEAT;
-                } else if (wrapMode === "CLAMP_TO_EDGE") {
-                    glWrapMode = gl.CLAMP_TO_EDGE;
-                } else if (wrapMode === "MIRROR_REPEAT") {
-                    glWrapMode = gl.MIRROR_REPEAT;
-                }
-                return glWrapMode;
+                return wrapMode == null ? WebGLRenderingContext.REPEAT : wrapMode;
             },
 
             handleError: function(errorCode, info) {
@@ -670,13 +443,110 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                 return (x & (x - 1)) == 0;
             },
 
-            //should be called only once
-            convert: function (resource, ctx) {
-                var gl = this.webGLContext;
+            installCubemapSide: function(gl, target, texture, content) {
+                gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
+                gl.texImage2D(target, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, content);
+                gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+            },
 
-                //for now, naive handling of videos
-                if (resource.source.type == "video") {
-                    resource.source.videoElement = ctx;
+            createTextureFromImageAndSampler: function(image, sampler, gl) {
+                var activeTexture = gl.getParameter(gl.ACTIVE_TEXTURE)
+                var textureBinding = gl.getParameter(gl.TEXTURE_BINDING_2D);
+                gl.activeTexture(gl.TEXTURE0);
+
+                var canvas = null;
+                var minFilter = this.getGLFilter(sampler.minFilter);
+                var magFilter = this.getGLFilter(sampler.magFilter);
+                var wrapS = this.getGLWrapMode(sampler.wrapS);
+                var wrapT = this.getGLWrapMode(sampler.wrapT);
+                var shouldResize = false;
+                var usesMipMaps = ((minFilter === gl.NEAREST_MIPMAP_NEAREST) ||
+                    (minFilter === gl.LINEAR_MIPMAP_NEAREST) ||
+                    (minFilter === gl.NEAREST_MIPMAP_LINEAR) ||
+                    (minFilter === gl.LINEAR_MIPMAP_LINEAR));
+
+                if (usesMipMaps ||  (wrapS === gl.REPEAT) || (wrapT === gl.REPEAT)) {
+
+                    var width = parseInt(image.width);
+                    var height = parseInt(image.height);
+
+                    if (!this.isPowerOfTwo(width)) {
+                        width = this.nextHighestPowerOfTwo(width);
+                        shouldResize = true;
+                    }
+                    if (!this.isPowerOfTwo(height)) {
+                        height = this.nextHighestPowerOfTwo(height);
+                        shouldResize = true;
+                    }
+
+                    if (shouldResize) {
+                        canvas = document.createElement("canvas");
+                        canvas.width = width;
+                        canvas.height = height;
+
+                        var graphicsContext = canvas.getContext("2d");
+                        graphicsContext.drawImage(image, 0, 0, parseInt(canvas.width), parseInt(canvas.height));
+                        canvas.id = image.id;
+                        image = canvas;
+                    }
+                }
+
+
+                var texture = gl.createTexture();
+                texture.contextID = gl.contextID;
+
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, minFilter);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, magFilter);
+                
+                /*
+                var extensions = gl.getSupportedExtensions();
+                var ext = gl.getExtension("WEBKIT_EXT_texture_filter_anisotropic");
+                var max_anisotropy = gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+                gl.texParameterf(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, max_anisotropy);
+                */
+
+                //FIXME: use from input texture (target, format, internal format)
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                if (usesMipMaps) {
+                    gl.generateMipmap(gl.TEXTURE_2D);
+                }
+
+                gl.bindTexture(gl.TEXTURE_2D, textureBinding);
+                gl.activeTexture(activeTexture);
+
+
+                return texture;
+            },
+
+            //should be called only once
+            convert: function (source, resource, ctx) {
+                var gl = ctx;
+                if (source) {
+                    if (source.length === 6) {
+                        //we must have a cube map here:
+                        var cubeTexture = gl.createTexture();
+                        gl.bindTexture(gl.TEXTURE_CUBE_MAP, cubeTexture);
+                        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+                        this.installCubemapSide(gl, gl.TEXTURE_CUBE_MAP_POSITIVE_X, cubeTexture, source[0]);
+                        this.installCubemapSide(gl, gl.TEXTURE_CUBE_MAP_NEGATIVE_X, cubeTexture, source[1]);
+                        this.installCubemapSide(gl, gl.TEXTURE_CUBE_MAP_POSITIVE_Y, cubeTexture, source[2]);
+                        this.installCubemapSide(gl, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, cubeTexture, source[3]);
+                        this.installCubemapSide(gl, gl.TEXTURE_CUBE_MAP_POSITIVE_Z, cubeTexture, source[4]);
+                        this.installCubemapSide(gl, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, cubeTexture, source[5]);
+
+                        return cubeTexture;
+                    }
+
+                } else if (source.type == "video") {
+                    //for now, naive handling of videos
+                    resource.source.videoElement = source;
                     var texture = gl.createTexture();
                     gl.bindTexture(gl.TEXTURE_2D, texture);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -685,61 +555,10 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, resource.source.videoElement);
                     gl.bindTexture(gl.TEXTURE_2D, null);
-
                     return texture;
                 }
 
-
-                var image = ctx;
-                var canvas = document.createElement("canvas");
-
-                //TODO: add compressed textures
-                var sampler = resource.sampler;
-                var minFilter = this.getGLFilter(sampler.minFilter);
-                var magFilter = this.getGLFilter(sampler.magFilter);
-                var wrapS = this.getGLWrapMode(sampler.wrapS);
-                var wrapT = this.getGLWrapMode(sampler.wrapT);
-                if ((wrapS === gl.REPEAT) || (wrapT === gl.REPEAT)) {
-                    var width = parseInt(image.width);
-                    var height = parseInt(image.height);
-
-                    if (!this.isPowerOfTwo(width)) {
-                        width = this.nextHighestPowerOfTwo(width);
-                    }
-                    if (!this.isPowerOfTwo(height)) {
-                        height = this.nextHighestPowerOfTwo(height);
-                    }
-                    canvas.width = width;
-                    canvas.height = height;
-
-                } else {
-                    canvas.width = image.width;
-                    canvas.height = image.height;
-                }
-
-                var graphicsContext = canvas.getContext("2d");
-                graphicsContext.drawImage(image, 0, 0, parseInt(canvas.width), parseInt(canvas.height));
-                canvas.id = image.id;
-                image = canvas;
-
-                var texture = gl.createTexture();
-                gl.bindTexture(gl.TEXTURE_2D, texture);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, minFilter);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, magFilter);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-                if ((minFilter === gl.NEAREST_MIPMAP_NEAREST) ||
-                    (minFilter === gl.LINEAR_MIPMAP_NEAREST) ||
-                    (minFilter === gl.NEAREST_MIPMAP_LINEAR) ||
-                    (minFilter === gl.LINEAR_MIPMAP_LINEAR))
-                {
-                    gl.generateMipmap(gl.TEXTURE_2D);
-                }
-
-                gl.bindTexture(gl.TEXTURE_2D, null);
-
-                return texture;
+                return this.createTextureFromImageAndSampler(source, resource.sampler, gl);
             },
 
             resourceAvailable: function (glResource, ctx) {
@@ -749,30 +568,25 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
 
     _lastMaxEnabledArray: { value: 0, writable: true },
 
-    _blend: { value: false },
+    _states: { value: null, writable: true },
 
     setState: {
         value: function(stateID, flag, force) {
-            var gl = this.webGLContext;
-            switch (stateID) {
-                case gl.BLEND:
-                    if ((this._blend !== flag) || force) {
-                        if (flag) {
-                            gl.enable(gl.BLEND);
-                        } else {
-                            gl.disable(gl.BLEND);
-                        }
-                        this._blend = flag;
-                    }
-                    break;
 
-                default:
-                    if (flag) {
-                        gl.enable(stateID);
-                    } else {
-                        gl.disable(stateID);
-                    }
-                    break;
+            var gl = this.webGLContext;
+
+            if ((this._states[stateID] != null) && (force != true)) {
+                if (this._states[stateID] === flag) {
+                    return;
+                }
+            }
+
+            this._states[stateID] = flag;
+
+            if (flag) {
+                gl.enable(stateID);
+            } else {
+                gl.disable(stateID);
             }
         }
     },
@@ -794,8 +608,6 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
     renderPrimitive: {
         value: function(primitiveDescription, pass, time, parameters) {
             var renderVertices = false;
-            //var worldMatrix = primitiveDescription.worldViewMatrix;
-            //var projectionMatrix = this.projectionMatrix;
             var value = null;
             var primitive = primitiveDescription.primitive;
             var newMaxEnabledArray = -1;
@@ -808,45 +620,58 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
             var allUniforms = program.uniformSymbols;
 
             for (i = 0; i < allUniforms.length ; i++) {
-                value = null;
                 var symbol = allUniforms[i];
                 var parameter = pass.instanceProgram.uniforms[symbol];
+
+                value = null;
                 parameter = parameters[parameter];
                 if (parameter) {
-                    if (parameter.semantic) {
-                        if (parameter.semantic == this.PROJECTION) {
+                    if (parameter.semantic != null) {
+                        var semantic = parameter.semantic;
+                        if (semantic === this.PROJECTION) {
                             value = this.projectionMatrix;
-                        } else {
-                            value = primitiveDescription[parameter.semantic];
+                        } else if (semantic === this.WORLDVIEW) {
+                            value = primitiveDescription.nodeWrapper.worldViewMatrix;
+                        } else if (semantic === this.WORLDVIEWINVERSETRANSPOSE) {
+                            value = primitiveDescription.nodeWrapper.worldViewInverseTransposeMatrix;
                         }
                     }
                 }
 
                 if ((value == null) && parameter != null) {
                     if (parameter.source) {
-                        //FIXME: assume WORLDMATRIX at the moment, need to clarify how to use semantic and the whole source syntax
-                        if (parameter.worldViewMatrix == null) {
-                            parameter.worldViewMatrix = mat4.create();
-                        }
-
-                        mat4.multiply(this.viewMatrix, parameter.source.worldTransform, parameter.worldViewMatrix);
-                        value = parameter.worldViewMatrix;
-
+                        var nodeWrapper = primitiveDescription.nodeWrapper.scenePassRenderer._nodeWrappers[parameter.source.id];
+                        value = nodeWrapper.worldViewMatrix;
                     } else {
                         value = parameter.value;
                     }
                 }
 
+                var texture = null;
+
                 if (value != null) {
-                    var uniformIsSampler2D = program.getTypeForSymbol(symbol) === gl.SAMPLER_2D;
-                    if (uniformIsSampler2D) {
-                        var texture = value;
-                        this.textureDelegate.webGLContext = this.webGLContext;
-                        var texture = this.resourceManager.getResource(texture, this.textureDelegate, this.webGLContext);
+                    var glType = program.getTypeForSymbol(symbol);
+                    var uniformIsSamplerCube = glType === gl.SAMPLER_CUBE;
+                    var uniformIsSampler2D = glType === gl.SAMPLER_2D;
+
+                    if (uniformIsSamplerCube) {
+                        texture = this.resourceManager.getResource(value, this.textureDelegate, this.webGLContext);
                         if (texture) {
                             gl.activeTexture(gl.TEXTURE0 + currentTexture);
-                            gl.bindTexture(gl.TEXTURE_2D, texture);
+                            gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
 
+                            var samplerLocation = program.getLocationForSymbol(symbol);
+                            if (typeof samplerLocation !== "undefined") {
+                                program.setValueForSymbol(symbol, currentTexture);
+                                currentTexture++;
+                            }
+                        }
+                    } else if (uniformIsSampler2D) {
+                        texture = this.resourceManager.getResource(value, this.textureDelegate, this.webGLContext);
+                        if (texture != null) {
+                            //HACK: to keep track of texture
+                            gl.activeTexture(gl.TEXTURE0 + currentTexture);
+                            gl.bindTexture(gl.TEXTURE_2D, texture);
                             if (parameter.value.source.videoElement) {
                                 if (parameter.value.source.timeStamp != time) {
                                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA,
@@ -859,12 +684,9 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                             if (typeof samplerLocation !== "undefined") {
                                 program.setValueForSymbol(symbol, currentTexture);
                                 currentTexture++;
-                            }
-                        }
-                        //we prefer to bail out if the texture is not ready
-                        if (texture == null) {
-                            return;
-                        }
+                            } 
+                        } 
+
                     } else {
                         program.setValueForSymbol(symbol, value);
                     }
@@ -874,7 +696,6 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
             program.commit(gl);
 
             var availableCount = 0;
-            this.vertexAttributeBufferDelegate.webGLContext = this.webGLContext;
 
             //----- bind attributes -----
             var attributes = pass.instanceProgram.attributes;
@@ -885,16 +706,12 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                 parameter = parameters[parameter];
                 var semantic = parameter.semantic;
                 var accessor = primitive.semantics[semantic];
-                if (accessor == null) {
-                    //FIXME: converter should never generate something that puts us in this situation
-                    continue;
-                }
+
                 var glResource = null;
                 if (primitiveDescription.compressed) {
-                    glResource = this.resourceManager._getResource(  accessor.id);
-                }
-                else {
-                    glResource = this.resourceManager.getResource(  accessor, this.vertexAttributeBufferDelegate, accessor);
+                    glResource = this.resourceManager._getResource( accessor.id);
+                } else {
+                    glResource = this.resourceManager.getResource( accessor, this.vertexAttributeBufferDelegate, this.webGLContext);
                 }
 
                     // this call will bind the resource when available
@@ -916,6 +733,7 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                             glResource.componentsPerAttribute,
                             glResource.componentType, false, accessor.byteStride, 0);
 
+
                         if ( renderVertices && (semantic == "POSITION")) {
                             gl.drawArrays(gl.POINTS, 0, accessor.count);
                         }
@@ -936,14 +754,11 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                     }
                 }
                 var glIndices = null;
-                //FIXME should not assume 2 bytes per indices (WebGL supports one byte too…)
-                this.indicesDelegate.webGLContext = this.webGLContext;
-
-                if (primitiveDescription.compressed)
+                if (primitiveDescription.compressed) {
                     glIndices = this.resourceManager._getResource(primitive.indices.id);
-                else
-                    glIndices = this.resourceManager.getResource(primitive.indices, this.indicesDelegate, primitive);
-
+                } else {
+                    glIndices = this.resourceManager.getResource(primitive.indices, this.indicesDelegate, this.webGLContext);
+                }
 
                 if (glIndices && available) {
                     //if (!primitiveDescription.mesh.loaded) {
@@ -966,13 +781,11 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
             },
 
             //should be called only once
-            convert: function (resource, ctx) {
-                var gl = ctx.gl;
-                var instanceProgram = ctx.instanceProgram;
+            convert: function (source, resource, ctx) {
+                var gl = ctx;
                 var glslProgram = Object.create(GLSLProgram);
                 glslProgram.initWithShaders( resource );
-                if (!glslProgram.build(gl, Object.keys(instanceProgram.attributes),
-                                            Object.keys(instanceProgram.uniforms))) {
+                if (!glslProgram.build(gl)) {
                     console.log(resource);
                     console.log(glslProgram.errorLogs);
                 }
@@ -1088,7 +901,8 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
             var count = primitives.length;
             var gl = this.webGLContext;
             if (pass.instanceProgram) {
-                var ctx = { "gl" : gl, "instanceProgram" : pass.instanceProgram };
+
+                var ctx = gl;
                 var glProgram = this.resourceManager.getResource(pass.instanceProgram.program, this.programDelegate, ctx);
                 if (glProgram) {
                     var blending = false;
@@ -1115,15 +929,16 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                             var blendFunc = states.blendFunc;
                             if (blendFunc) {
                                 if (blendFunc.sfactor)
-                                    sfactor = this._GLEnumFromString[blendFunc.sfactor];
+                                    sfactor = blendFunc.sfactor;
                                 if (blendFunc.dfactor)
-                                    dfactor = this._GLEnumFromString[blendFunc.dfactor];
+                                    dfactor = blendFunc.dfactor;
                             }
                         }
                     }
 
-                   // this.setState(gl.DEPTH_TEST, depthTest);
+                    //this.setState(gl.DEPTH_TEST, depthTest);
                     this.setState(gl.CULL_FACE, cullFaceEnable);
+
                     //gl.depthMask(depthMask);
                     this.setState(gl.BLEND, blending);
                     if (blending) {
@@ -1135,17 +950,19 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                     if (isPickingPass) {
                         for (var i = 0 ; i < count ; i++) {
                             var primitive = primitives[i];
+                            if (primitive.node.hidden)
+                                continue;
                             if (!primitive.pickingColor) {
-                                if (primitive.nodeID) {
+                                var nodeID = primitive.node.id;
+                                if (nodeID) {
                                     //FIXME move this into the picking technique when we have it..
                                     //for picking, we need to associate a color to each node.
-                                    var nodePickingColor = pass.extras.nodeIDToColor[primitive.nodeID];
+                                    var nodePickingColor = pass.extras.nodeIDToColor[nodeID];
                                     if (!nodePickingColor) {
                                         nodePickingColor = vec4.createFrom(Math.random(),Math.random(),Math.random(), 1.);
-                                        pass.extras.nodeIDToColor[primitive.nodeID] = nodePickingColor;
+                                        pass.extras.nodeIDToColor[nodeID] = nodePickingColor;
                                     }
                                     primitive.pickingColor = nodePickingColor;
-
                                 }
                             }
                             this.bindedProgram.setValueForSymbol("u_pickingColor", primitive.pickingColor);
@@ -1154,38 +971,157 @@ exports.WebGLRenderer = Object.create(Object.prototype, {
                     } else {
                         for (var i = 0 ; i < count ; i++) {
                             var primitive = primitives[i];
-
+                            if (primitive.node.hidden)
+                                continue;
                             var globalIntensity = 1;
                             parameters = primitive.primitive.material.parameters;
                             var transparency = parameters["transparency"];
                             if (transparency) {
-                                if (transparency.value)
+                                if (transparency.value != null)
                                     globalIntensity *= transparency.value;
                             }
 
                             var filterColor = parameters["filterColor"];
                             if (filterColor) {
-                                if (filterColor.value) {
+                                if (filterColor.value != null) {
                                     globalIntensity *= filterColor.value[3];
                                 }
                             }
-                            if (globalIntensity < 0.00001)
+                            if (globalIntensity < 0.00001) {
                                 continue;
+                            }
 
                             if ((globalIntensity < 1) && !blending) {
-                                blending = true;
                                 this.setState(gl.BLEND, true);
                                 gl.blendEquation(gl.FUNC_ADD);
                                 gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                            } else if (blending && (globalIntensity === 1)) {
+                                this.renderPrimitive(primitive, pass, time);
                                 this.setState(gl.BLEND, false);
-                                blending = false;
+                            } else {
+                                this.renderPrimitive(primitive, pass, time);
                             }
-                            this.renderPrimitive(primitive, pass, time);
+
                         }
                     }
                 }
             }
+        }
+    },
+
+    _BBOXProgram: { value: null , writable: true },
+
+    drawBBOX: {
+        value: function(bbox, cameraMatrix, modelMatrix, projectionMatrix) {
+            var gl = this.webGLContext;
+
+            this.bindedProgram = null;
+
+            this.setState(gl.CULL_FACE, false);
+
+            if (!this._BBOXProgram) {
+                this._BBOXProgram = Object.create(GLSLProgram);
+
+                var vertexShader =  "precision highp float;" +
+                    "attribute vec3 vert;"  +
+                    "uniform mat4 u_projMatrix; " +
+                    "uniform mat4 u_vMatrix; " +
+                    "uniform mat4 u_mMatrix; " +
+                    "void main(void) { " +
+                    "gl_Position = u_projMatrix * u_vMatrix * u_mMatrix * vec4(vert,1.0); }";
+
+                var fragmentShader =    "precision highp float;" +
+                    "uniform float u_transparency; " +
+                    " void main(void) { " +
+                    " gl_FragColor = vec4(vec3(1.,1.,1.) , u_transparency);" +
+                    "}";
+
+                this._BBOXProgram.initWithShaders( {    "x-shader/x-vertex" : vertexShader ,
+                    "x-shader/x-fragment" : fragmentShader } );
+                if (!this._BBOXProgram.build(gl))
+                    console.log(this._BBOXProgram.errorLogs);
+            }
+
+            var min = [bbox[0][0], bbox[0][1], bbox[0][2]];
+            var max = [bbox[1][0], bbox[1][1], bbox[1][2]];
+
+            var X = 0;
+            var Y = 1;
+            var Z = 2;
+
+            if (!this._BBOXIndices) {
+                var indices = [ 0, 1,
+                    1, 2,
+                    2, 3,
+                    3, 0,
+                    4, 5,
+                    5, 6,
+                    6, 7,
+                    7, 4,
+                    3, 7,
+                    2, 6,
+                    0, 4,
+                    1, 5];
+
+                this._BBOXIndices = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._BBOXIndices);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+            }
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._BBOXIndices);
+
+            if (!this._BBOXVertexBuffer) {
+                this._BBOXVertexBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, this._BBOXVertexBuffer);
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, this._BBOXVertexBuffer);
+
+            var vertices = [
+                max[X], min[Y], min[Z],
+                max[X], max[Y], min[Z],
+                min[X], max[Y], min[Z],
+                min[X], min[Y], min[Z],
+                max[X], min[Y], max[Z],
+                max[X], max[Y], max[Z],
+                min[X], max[Y], max[Z],
+                min[X], min[Y], max[Z]
+            ];
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+            var vertLocation = this._BBOXProgram.getLocationForSymbol("vert");
+            if (vertLocation != null) {
+                gl.enableVertexAttribArray(vertLocation);
+                gl.vertexAttribPointer(vertLocation, 3, gl.FLOAT, false, 12, 0);
+            }
+
+            this.bindedProgram = this._BBOXProgram;
+
+            var projectionMatrixLocation = this._BBOXProgram.getLocationForSymbol("u_projMatrix");
+            if (projectionMatrixLocation) {
+                this._BBOXProgram.setValueForSymbol("u_projMatrix",projectionMatrix);
+            }
+
+            var mMatrixLocation = this._BBOXProgram.getLocationForSymbol("u_mMatrix");
+            if (mMatrixLocation) {
+                this._BBOXProgram.setValueForSymbol("u_mMatrix",modelMatrix);
+            }
+
+            var vMatrixLocation = this._BBOXProgram.getLocationForSymbol("u_vMatrix");
+            if (vMatrixLocation) {
+                this._BBOXProgram.setValueForSymbol("u_vMatrix",cameraMatrix);
+            }
+
+            var transparency = this._BBOXProgram.getLocationForSymbol("u_transparency");
+            if (transparency) {
+                this._BBOXProgram.setValueForSymbol("u_transparency",1 /*mesh.step*/);
+            }
+
+            this._BBOXProgram.commit(gl);
+            //void drawElements(GLenum mode, GLsizei count, GLenum type, GLintptr offset);
+            gl.drawElements(gl.LINES, 24, gl.UNSIGNED_SHORT, 0);
+            gl.disableVertexAttribArray(vertLocation);
+
+            this.setState(gl.BLEND, false);
+            this.setState(gl.CULL_FACE, true);
         }
     },
 

@@ -36,13 +36,6 @@ var GLSLProgram = exports.GLSLProgram = Object.create(Object.prototype, {
     VERTEX_SHADER: { value: "x-shader/x-vertex" },
     FRAGMENT_SHADER: { value: "x-shader/x-fragment" },
 
-    _GLTypes:
-    {
-        enumerable: false,
-        value: null,
-        writable: true
-    },
-
     _shaders:
     {
         enumerable: false,
@@ -295,36 +288,58 @@ var GLSLProgram = exports.GLSLProgram = Object.create(Object.prototype, {
         value: function(symbol,value)  {
             var existingValue = this.symbolToValue[symbol];
             var type = this.getTypeForSymbol(symbol);
-            var GL = this._GLTypes;
+            var GL = WebGLRenderingContext;
 
-            if ((typeof existingValue !== "undefined") && (existingValue !== "null")) {
-                if (type === GL.FLOAT_MAT4) {
+            if (( value != null) && (existingValue != null)) {
+                if (type === GL.FLOAT) {
+                    if (value === existingValue) {
+                        return;
+                    }
+                } else if (type === GL.FLOAT_MAT4) {
                     if (value.length == 16) {
                         if (mat4.equal(existingValue, value)) {
                             return;
                         }
                     }
-                }
-                if (type === GL.FLOAT_MAT3) {
+                } else if (type === GL.FLOAT_MAT3) {
                     if (value.length == 9) {
                         if (mat3.equal(existingValue, value)) {
                             return;
                         }
                     }
-                }
-                if (type === GL.FLOAT_VEC3) {
+                } else if (type === GL.FLOAT_VEC3) {
                     if (value.length == 3) {
                         if (vec3.equal(existingValue, value)) {
                             return;
                         }
                     }
-                }
-                if (type === GL.FLOAT_VEC4) {
+                } else if (type === GL.FLOAT_VEC4) {
                     if (value.length == 4) {
                         if (vec4.equal(existingValue, value)) {
                             return;
                         }
                     }
+                } else if (type === GL.FLOAT_VEC2) {
+                    if (value.length == 2) {
+                        if (vec4.equal(existingValue, value)) {
+                            return;
+                        }
+                    }
+                }
+
+            } else {
+                if (type === GL.FLOAT_MAT4) {
+                    if (value.length === 16) {
+                        existingValue = mat4.create();
+                    }
+                } else if (type === GL.FLOAT_MAT3) {
+                    existingValue = mat3.create();
+                } else if (type === GL.FLOAT_VEC3) {
+                    existingValue = vec3.create();
+                } else if (type === GL.FLOAT_VEC4) {
+                    existingValue = vec4.create();
+                } else if (type === GL.FLOAT_VEC2) {
+                    existingValue = vec2.create();
                 }
             }
 
@@ -334,31 +349,19 @@ var GLSLProgram = exports.GLSLProgram = Object.create(Object.prototype, {
                 }
             }
 
-            if ((typeof value !== "undefined") && (value !== "null")) {
-                var temp;
+            if (value != null) {
                 if (type === GL.FLOAT_MAT4) {
-                    if (value.length == 16) {
-                        temp = mat4.create();
-                        value = mat4.set(value,temp);
+                    if (value.length === 16) {
+                        value = mat4.set(value ,existingValue);
                     }
-                }
-                if (type === GL.FLOAT_MAT3) {
-                    if (value.length == 9) {
-                        temp = mat3.create();
-                        value = mat3.set(value,temp);
-                    }
-                }
-                if (type === GL.FLOAT_VEC3) {
-                    if (value.length == 3) {
-                        temp = vec3.create();
-                        value = vec3.set(value,temp);
-                    }
-                }
-                if (type === GL.FLOAT_VEC4) {
-                    if (value.length == 4) {
-                        temp = vec4.create();
-                        value = vec4.set(value,temp);
-                    }
+                } else if (type === GL.FLOAT_MAT3) {
+                    value = mat3.set(value, existingValue);
+                } else if (type === GL.FLOAT_VEC3) {
+                    value = vec3.set(value, existingValue);
+                } else if (type === GL.FLOAT_VEC4) {
+                    value = vec4.set(value, existingValue);
+                } else if (type === GL.FLOAT_VEC2) {
+                    value = vec2.set(value, existingValue);
                 }
             }
 
@@ -387,6 +390,9 @@ var GLSLProgram = exports.GLSLProgram = Object.create(Object.prototype, {
             theSwitch[WebGLRenderingContext.FLOAT] = function uniform1f(GL, location , count, value) {
                 GL.uniform1f(location,value);
             };
+            theSwitch[WebGLRenderingContext.FLOAT_VEC2] = function uniform2fv(GL, location , count, value) {
+                GL.uniform2fv(location,value);
+            };
             theSwitch[WebGLRenderingContext.FLOAT_VEC3] = function uniform3fv(GL, location , count, value) {
                 GL.uniform3fv(location,value);
             };
@@ -399,6 +405,10 @@ var GLSLProgram = exports.GLSLProgram = Object.create(Object.prototype, {
             theSwitch[WebGLRenderingContext.SAMPLER_2D] = function uniform1i(GL, location , count, value) {
                 GL.uniform1i(location, value);
             };
+            theSwitch[WebGLRenderingContext.SAMPLER_CUBE] = function uniform1i(GL, location , count, value) {
+                GL.uniform1i(location, value);
+            };
+
             return theSwitch;
         })()
     },
@@ -406,15 +416,17 @@ var GLSLProgram = exports.GLSLProgram = Object.create(Object.prototype, {
     //that should be private
     commit: {
         value: function(GL) {
-            var i = this.pendingCommits.length-1, symbol;
-            while (symbol = this.pendingCommits[i--]) {
-                this._commitSwitch[this.getTypeForSymbol(symbol)](
-                    GL,
-                    GL.getUniformLocation(this.GLProgram,symbol),
-                    false,
-                    this.getValueForSymbol(symbol));
+            if (this.pendingCommits.length) {
+                var i = this.pendingCommits.length-1, symbol;
+                while (symbol = this.pendingCommits[i--]) {
+                    this._commitSwitch[this.getTypeForSymbol(symbol)](
+                        GL,
+                        this.symbolToLocation[symbol],
+                        false,
+                        this.getValueForSymbol(symbol));
+                }
+                this.pendingCommits.length = 0;
             }
-            this.pendingCommits = [];
         }
     },
 
@@ -452,7 +464,7 @@ var GLSLProgram = exports.GLSLProgram = Object.create(Object.prototype, {
     },
 
     build: {
-        value: function(GL, attributes, uniforms) {
+        value: function(GL) {
             var i;
             var vertexShaderSource = this.shaders[GLSLProgram.VERTEX_SHADER];
             var fragmentShaderSource = this.shaders[GLSLProgram.FRAGMENT_SHADER];
@@ -460,11 +472,11 @@ var GLSLProgram = exports.GLSLProgram = Object.create(Object.prototype, {
             var activeInfo;
 
             var vertexShader = this.createShaderWithSourceAndType(GL,vertexShaderSource,GLSLProgram.VERTEX_SHADER);
-            if (vertexShader === null)
+            if (vertexShader == null)
                 return false;
 
             var fragmentShader = this.createShaderWithSourceAndType(GL,fragmentShaderSource,GLSLProgram.FRAGMENT_SHADER);
-            if (fragmentShader === null)
+            if (fragmentShader == null)
                 return false;
 
             this.GLProgram = GL.createProgram();
@@ -483,12 +495,6 @@ var GLSLProgram = exports.GLSLProgram = Object.create(Object.prototype, {
                 this.attributeSymbols = [];
                 this.symbolToSemantic = {};
                 this.semanticToSymbol = {};
-                this._GLTypes = {
-                    "FLOAT_MAT4" : GL.FLOAT_MAT4,
-                    "FLOAT_MAT3" : GL.FLOAT_MAT3,
-                    "FLOAT_VEC3" : GL.FLOAT_VEC3,
-                    "FLOAT_VEC4" : GL.FLOAT_VEC4
-                }
 
                 var currentProgram = GL.getParameter( GL.CURRENT_PROGRAM );
                 GL.useProgram(this.GLProgram);

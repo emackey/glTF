@@ -26,20 +26,9 @@ var Base = require("runtime/base").Base;
 
 var Channel = exports.Channel = Object.create(Base, {
 
-    duration: { value: -1, writable:true
-        /*
-         get: function() {
+    startTime: { value: 0, writable:true },
 
-            var inputParameter = this.sampler.input;
-            var inputArray = this.getParameterArray(inputParameter, resourceManager);
-            if (inputArray) {
-                var count = inputParameter.count;
-                return inputArray[count - 1];
-            }
-            return -1;
-        }
-         */
-    },
+    endTime: { value: 0, writable:true },
 
     _sampler: { value: null, writable: true },
 
@@ -80,8 +69,68 @@ var Channel = exports.Channel = Object.create(Base, {
                 console.log("ERROR:parameterDelegate:"+errorCode+" :"+info);
             },
 
-            convert: function (resource, ctx) {
-                //FIXME:harcode float32
+            decode: function(arrayBuffer, parameter) {
+                if (arrayBuffer, parameter) {
+                    function str2ab(str) {
+                        var buf = new ArrayBuffer(str.length);
+                        var bufView = new Uint8Array(buf);
+                        for (var i = 0 , strLen = str.length ; i<strLen ; i++) {
+                            bufView[i] = str.charCodeAt(i);
+                        }
+                        return buf;
+                    }
+
+                    var resType = parameter.extensions["Open3DGC-compression"].compressedData.mode == "ascii" ? "text" : "arraybuffer";
+
+                    if (resType === "text") {
+                        var bstream = new o3dgc.BinaryStream(str2ab(arrayBuffer));
+                        var size = arrayBuffer.length;
+                    }
+                    else{
+                        var bstream = new o3dgc.BinaryStream(arrayBuffer);
+                        var size = arrayBuffer.byteLength;
+                    }
+
+                    var decoder = new o3dgc.DynamicVectorDecoder();
+                    var dynamicVector = new o3dgc.DynamicVector();
+                    var timer = new o3dgc.Timer();
+                    timer.Tic();
+                    decoder.DecodeHeader(dynamicVector, bstream);
+                    timer.Toc();
+                    console.log("DecodeHeader time (ms) " + timer.GetElapsedTime());
+                    // allocate memory
+                    if (dynamicVector.GetNVector() > 0 && dynamicVector.GetDimVector()) {
+                        dynamicVector.SetVectors(new Float32Array(dynamicVector.GetNVector() * dynamicVector.GetDimVector()));
+                        dynamicVector.SetMinArray(new Float32Array(dynamicVector.GetDimVector()));
+                        dynamicVector.SetMaxArray(new Float32Array(dynamicVector.GetDimVector()));
+                        dynamicVector.SetStride(dynamicVector.GetDimVector());
+                    }
+                    console.log("Dynamic vector info:"+parameter.id);
+                    console.log("\t# vectors   " + dynamicVector.GetNVector());
+                    console.log("\tdim         " + dynamicVector.GetDimVector());
+                    // decode DV
+                    timer.Tic();
+                    decoder.DecodePlayload(dynamicVector, bstream);
+                    timer.Toc();
+                    console.log("DecodePlayload time " + timer.GetElapsedTime() + " ms, " + size + " bytes (" + (8.0 * size / dynamicVector.GetNVector()) + " bpv)");
+
+                    return dynamicVector.GetVectors();
+                }
+            },
+
+            convert: function (source, resource, ctx) {
+                var parameter = ctx;
+                if (parameter.extensions) {
+                    var extensions = parameter.extensions;
+                    var compression = extensions["Open3DGC-compression"];
+                    if (compression) {
+                        var compressionData = compression["compressedData"];
+                        if (compressionData) {
+                            return this.decode(resource, ctx);
+                        }
+                    }
+                }
+
                 return new Float32Array(resource);
             },
 
@@ -92,7 +141,17 @@ var Channel = exports.Channel = Object.create(Base, {
 
     getParameterArray: {
         value: function(parameter, resourceManager) {
-            return resourceManager.getResource(parameter, this.parameterDelegate, null);
+            if (parameter.extensions) {
+                var extensions = parameter.extensions;
+                var compression = extensions["Open3DGC-compression"];
+                if (compression) {
+                    var compressionData = compression["compressedData"];
+                    if (compressionData) {
+                        return resourceManager.getResource(compressionData, this.parameterDelegate, parameter);
+                    }
+                }
+            }
+            return resourceManager.getResource(parameter, this.parameterDelegate, parameter);
         }
     },
 
@@ -107,33 +166,58 @@ var Channel = exports.Channel = Object.create(Base, {
             if (inputArray && outputArray) {
                 time /= 1000;
                 var count = inputParameter.count;
-                this.duration = inputArray[count - 1];
-                time %= this.duration;
+
+                this.endTime = inputArray[count - 1];
+                this.startTime = inputArray[0];
+                //time %= this.endTime;
+
                 var lastKeyIndex = 0;
                 var i;
                 var keyIndex = 0;
                 var ratio = 0;
                 var timeDelta = 0;
+                var found = false;
+
+                var allBefore = true;
+                var allAfter = true;
                 if (count > 0) {
-                    for (i = lastKeyIndex ; i < count - 1 ; i++) {
-                        if ((inputArray[i] <= time) && (time < inputArray[i+1])) {
-                            lastKeyIndex = i;
-                            if (inputArray[i+1] != inputArray[i]) {
+                    if (time < this.startTime) {
+                        ratio = 0;
+                        lastKeyIndex = 0;
+                    } else if (time >= this.endTime) {
+                        ratio = 1;
+                        lastKeyIndex = count - 2;
+                    } else {
+                        for (i = lastKeyIndex ; i < count - 1 ; i++) {
+                            if ((inputArray[i] <= time) && (time < inputArray[i+1])) {
+                                lastKeyIndex = i;
                                 timeDelta = inputArray[i+1] - inputArray[i];
                                 ratio = (time - inputArray[i]) / timeDelta;
+                                break;
                             }
                         }
                     }
+
+                    if (this.__vec4 == null) {
+                        this.__vec4 = vec4.create();
+                    }
+                    if (this.__vec3 == null) {
+                        this.__vec3 = vec3.create();
+                    }
+                    if (this.__vec2 == null) {
+                        this.__vec2 = vec2.create();
+                    }
+
                     var interpolatedValue = null;
                     switch (outputParameter.componentsPerAttribute) {
                         case 4 :
-                            interpolatedValue = vec4.create();
+                            interpolatedValue = this.__vec4;
                             break;
                         case 3 :
-                            interpolatedValue = vec3.create();
+                            interpolatedValue = this.__vec3;
                             break;
                         case 2 :
-                            interpolatedValue = vec2.create();
+                            interpolatedValue = this.__vec2;
                             break;
                         case 1 :
                             console.log("float interpolation not handled yet");
@@ -153,9 +237,10 @@ var Channel = exports.Channel = Object.create(Base, {
 
                         var interpolationType = QUATERNION;//AXIS_ANGLE_INTERP_NAIVE;
 
-                        var axisAngle1 = vec4.createFrom(outputArray[idx1 + 0],outputArray[idx1 + 1],outputArray[idx1 + 2],outputArray[idx1 + 3]);
-                        var axisAngle2 = vec4.createFrom(outputArray[idx2 + 0],outputArray[idx2 + 1],outputArray[idx2 + 2],outputArray[idx2 + 3]);
                         if (interpolationType == AXIS_ANGLE_INTERP) {
+                            var axisAngle1 = vec4.createFrom(outputArray[idx1 + 0],outputArray[idx1 + 1],outputArray[idx1 + 2],outputArray[idx1 + 3]);
+                            var axisAngle2 = vec4.createFrom(outputArray[idx2 + 0],outputArray[idx2 + 1],outputArray[idx2 + 2],outputArray[idx2 + 3]);
+
                             vec3.normalize(axisAngle1); //FIXME: do that upfront
                             vec3.normalize(axisAngle2);
                             //get the rotation axis from the cross product
@@ -178,6 +263,9 @@ var Channel = exports.Channel = Object.create(Base, {
                             var interpolatedAngle = axisAngle1[3]+((axisAngle2[3]-axisAngle1[3]) * ratio);
                             quat4.fromAngleAxis(interpolatedAngle, rotAxis, interpolatedValue);
                         } else if (interpolationType == AXIS_ANGLE_INTERP_NAIVE) {
+                            var axisAngle1 = vec4.createFrom(outputArray[idx1 + 0],outputArray[idx1 + 1],outputArray[idx1 + 2],outputArray[idx1 + 3]);
+                            var axisAngle2 = vec4.createFrom(outputArray[idx2 + 0],outputArray[idx2 + 1],outputArray[idx2 + 2],outputArray[idx2 + 3]);
+
                             //direct linear interpolation of components, to be considered for small angles
                             for (i = 0 ; i < interpolatedValue.length ; i++) {
                                 var v1 = axisAngle1[ i];
@@ -186,12 +274,36 @@ var Channel = exports.Channel = Object.create(Base, {
                             }
                             quat4.fromAngleAxis(axisAngle2[3], axisAngle2, interpolatedValue);
                         } else if (interpolationType == QUATERNION) {
-                            var k1 = quat4.create();
-                            var k2 = quat4.create();
+
+                            if (this._quats == null) {
+                                this._quats = [];
+
+                                this._quats.push(quat4.create());
+                                this._quats.push(quat4.create());
+                            }
+
+                            if (this._vecs == null) {
+                                this._vecs = [];
+
+                                this._vecs.push(vec3.create());
+                                this._vecs.push(vec3.create());
+                            }
+
+                            this._vecs[0][0] = outputArray[idx1 + 0];
+                            this._vecs[0][1] = outputArray[idx1 + 1];
+                            this._vecs[0][2] = outputArray[idx1 + 2];
+
+                            this._vecs[1][0] = outputArray[idx2 + 0];
+                            this._vecs[1][1] = outputArray[idx2 + 1];
+                            this._vecs[1][2] = outputArray[idx2 + 2];
+
+                            var k1 = this._quats[0];
+                            var k2 = this._quats[1];
+
                             quat4.fromAngleAxis(outputArray[idx1 + 3],
-                                vec3.createFrom(outputArray[idx1 + 0],outputArray[idx1 +1],outputArray[idx1 + 2]), k1);
+                                this._vecs[0], k1);
                             quat4.fromAngleAxis(outputArray[idx2 + 3],
-                                vec3.createFrom(outputArray[idx2 + 0],outputArray[idx2 + 1],outputArray[idx2 + 2]), k2);
+                                this._vecs[1], k2);
                             quat4.slerp(k1, k2, ratio, interpolatedValue);
                         }
 
@@ -277,7 +389,9 @@ exports.Animation = Object.create(Base, {
 
     _samplers: { value: null, writable: true },
 
-    _duration: { value: 0, writable: true },
+    _startTime: { value: 0, writable: true },
+
+    _endTime: { value: 0, writable: true },
 
     channels: {
         get: function() {
@@ -315,12 +429,36 @@ exports.Animation = Object.create(Base, {
         }
     },
 
-    duration: {
+    startTime: {
         get: function() {
             if (this.channels) {
-                if (this.channels.length) {
-                    return this.channels[0].duration;
+                if (this.channels.length > 0) {
+                    var startTime = this.channels[0].startTime;
+                    for (var i = 1 ; i < this.channels.length ; i++ ) {
+                        if (this.channels[i].startTime < startTime) {
+                            startTime = this.channels[i].startTime;
+                        }
+                    }
+                    return startTime;
                 }
+                return 0;
+            }
+        }
+    },
+
+    endTime: {
+        get: function() {
+            if (this.channels) {
+                if (this.channels.length > 0) {
+                    var endTime = this.channels[0].endTime;
+                    for (var i = 1 ; i < this.channels.length ; i++ ) {
+                        if (this.channels[i].endTime > endTime) {
+                            endTime = this.channels[i].endTime;
+                        }
+                    }
+                    return endTime;
+                }
+                return 0;
             }
         }
     },

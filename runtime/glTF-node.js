@@ -26,7 +26,16 @@ var Base = require("runtime/base").Base;
 var Transform = require("runtime/transform").Transform;
 var Utilities = require("runtime/utilities").Utilities;
 
-exports.glTFNode = Object.create(Base, {
+var glTFNode = exports.glTFNode = Object.create(Base, {
+    
+    //just for glTFNode singleton
+    currentId: { value: 0, writable:true },
+
+    bumpId: {
+        value: function() {
+            return glTFNode._id++;
+        }
+    },
 
     _children: { value: null, writable: true },
 
@@ -65,7 +74,6 @@ exports.glTFNode = Object.create(Base, {
         enumerable: false,
         value: function() {
             if (!this._boundingBox) {
-
                 var meshes = this._properties["meshes"];
                 var count = this.meshes.length;
                 if (count > 0) {
@@ -78,10 +86,39 @@ exports.glTFNode = Object.create(Base, {
                                 bbox = Utilities.mergeBBox(bbox, aBBox);
                             }
                         }
-
                         this._boundingBox = bbox;//Utilities.transformBBox(bbox, this.transform);
                     }
                 }
+            }
+        }
+    },
+
+    getBoundingBox: {
+        value: function(includesHierarchy) {
+            //FIXME: this code is inefficient, BBOX be cached with dirty flags and invalidation (just like for worldMatrix)
+            if (includesHierarchy) {
+                var ctx = mat4.identity();
+                var hierarchicalBBOX = this.boundingBox;
+                this.apply( function(node, parent, parentTransform) {
+                    var modelMatrix = mat4.create();
+                    mat4.multiply( parentTransform, node.transform.matrix, modelMatrix);
+                    if (node.boundingBox) {
+                        var bbox = Utilities.transformBBox(node.boundingBox, modelMatrix);
+
+                        if (hierarchicalBBOX) {
+                            if (node.meshes) {
+                                if (node.meshes.length > 0)
+                                    hierarchicalBBOX = Utilities.mergeBBox(bbox, hierarchicalBBOX);
+                            }
+                        } else {
+                            hierarchicalBBOX = bbox;
+                        }
+                    }
+                    return modelMatrix;
+                }, true, ctx);
+                return hierarchicalBBOX;
+            } else {
+                return this.boundingBox;
             }
         }
     },
@@ -111,11 +148,24 @@ exports.glTFNode = Object.create(Base, {
         }
     },
 
+    nodesDidChange: {
+        value: function(nodes) {
+        }
+    },
+
+    _parent: { value: null, writable: true},
+
+    parent: {
+        get: function() {
+            return this._parent;
+        }
+    },
+
     init: {
         value: function() {
             this.__Base_init();
             this._children = [];
-            this._transform = Object.create(Transform).init();
+            this.transform = Object.create(Transform).init();
             this._properties["meshes"] = [];
 
             var self = this;
@@ -125,8 +175,18 @@ exports.glTFNode = Object.create(Base, {
                 return result;
             }
 
+            this._children.push = function(data) {
+                var result = Array.prototype.push.call(this, data);
+                data._parent = self;
+                self.nodesDidChange(this);
+                return result;
+            }
+
             this._properties["cameras"] = [];
             this._properties["lights"] = [];
+
+            this._worldMatrixIsDirty = true;
+            this._worldMatrix = mat4.create();
 
             return this;
         }
@@ -138,6 +198,33 @@ exports.glTFNode = Object.create(Base, {
         }
     },
 
+    _observers: { value: null, writable: true},
+
+    addObserver: {
+        value: function(observer) {
+            if (this._observers == null) {
+                this._observers = [];
+            }
+
+            if (this._observers.indexOf(observer) === -1) {
+                this._observers.push(observer);
+            } else {
+                console.log("WARNING attempt to add 2 times the same observer in transform")
+            }
+        }
+    },
+
+    removeObserver: {
+        value: function(observer) {
+            if (this._observers) {
+                var index = this._observers.indexOf(observer);
+                if (index !== -1) {
+                    this._observers.splice(index, 1);
+                }
+            }
+        }
+    },
+
     _transform: { value: null, writable: true },
 
     transform: {
@@ -145,7 +232,28 @@ exports.glTFNode = Object.create(Base, {
             return this._transform;
         },
         set: function(value) {
+            if (this._observers) {
+                for (var i = 0 ; i < this._observers.length ; i++) {
+                    this._observers[i].transformWillChange(this, this._transform, value);
+                }
+            }
+
+            if (this._transform) {
+                this._transform.removeObserver(this);
+            }
             this._transform = value;
+            this._invalidateWorldMatrix();
+
+            if (this._transform) {
+                this._transform.addObserver(this);
+            }
+
+            if (this._observers) {
+                for (var i = 0 ; i < this._observers.length ; i++) {
+                    this._observers[i].transformDidChange(this);
+                }
+            }
+
         }
     },
 
@@ -271,6 +379,80 @@ exports.glTFNode = Object.create(Base, {
     nodeWithID: {
         value: function(id) {
             return this._nodeWithID(id);
+        }
+    },
+
+    copy: {
+        value: function(node) {
+            var node = Object.create(glTFNode).init();
+
+            node.name = this.name;
+            if (this.meshes) {
+                this.meshes.forEach( function(mesh) {
+                    node.meshes.push(mesh);
+                }, this);
+            }
+            if (this.lights) {
+                this.lights.forEach( function(light) {
+                    node.lights.push(light);
+                }, this);
+            }
+            if (this.cameras) {
+                this.cameras.forEach( function(camera) {
+                    node.cameras.push(camera);
+                }, this);
+            }
+
+            //for copies of nodes coming from a DAG we keep track of the id but still, we want to be different
+            node.id = this.id + "-" +this.bumpId();
+
+            node.transform = this.transform.copy();
+            return node;
+        }
+    },
+
+    _worldMatrixIsDirty: { value: true, writable:true },
+
+    _worldMatrix: { value: null, writable:true },
+
+    worldMatrix: {
+        get: function() {
+            if (this.parent) {
+                if (this._worldMatrixIsDirty) {
+                    mat4.multiply(this.parent.worldMatrix, this.transform.matrix, this._worldMatrix);
+                    this._worldMatrixIsDirty = false;
+                }
+                return this._worldMatrix;
+            } else {
+                this._worldMatrixIsDirty = false;
+                return this.transform.matrix;
+            }
+        }
+    },
+
+    _ignoresTransformUpdates: { value: false, writable: true },
+
+    _invalidateWorldMatrix: {
+        value: function() {
+            this._worldMatrixIsDirty = true;
+
+            //hack to tell observer to invalidate themselves
+            this._ignoresTransformUpdates = true;
+            this._transform._fireTransformDidUpdate();
+            this._ignoresTransformUpdates = false;
+
+            if (this._children) {
+                for (var i = 0 ; i < this._children.length ; i++) {
+                    this._children[i]._invalidateWorldMatrix();
+                }
+            }
+        }
+    },
+
+    transformDidUpdate: {
+        value: function() {
+            if (this._ignoresTransformUpdates === false)
+                this._invalidateWorldMatrix();
         }
     },
 

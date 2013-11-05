@@ -37,7 +37,6 @@ exports.RuntimeTFLoader = Object.create(glTFParser, {
             buffer.id = entryID;
             this.storeEntry(entryID, buffer, description);
             this.totalBufferSize += description.byteLength;
-            description.type = "arraybuffer";
             return true;
         }
     },
@@ -162,32 +161,29 @@ exports.RuntimeTFLoader = Object.create(glTFParser, {
             var parameters =  material.technique.parameters;
             material.parameters = JSON.parse(JSON.stringify(parameters)); //clone parameters
             if (values) {
-                values.forEach( function(value) {
-                    var parameter = parameters[value.parameter];
+                var parameterSid;
+                for (parameterSid in values) {
+                    var parameter = material.parameters[parameterSid];
                     if (parameter) {
+                        parameter.value = values[parameterSid];
                         var paramValue = null;
                         switch (parameter.type) {
-                            case "SAMPLER_2D":
+                            case WebGLRenderingContext.SAMPLER_CUBE:
+                            case WebGLRenderingContext.SAMPLER_2D:
                             {
-                                var entry = this.getEntry(value.value);
+                                var entry = this.getEntry(parameter.value);
                                 if (entry) {
                                     //this looks stupid, I need to get rid at least of .entry and treat within the getEntry method.
-                                    value.value = entry.entry;
-                                    paramValue = value;
-
-                                } else {
-                                    console.log("ERROR: can't find texture:"+value.value);
+                                    parameter.value = entry.entry;
                                 }
                             }
                                 break;
                             default: {
-                                paramValue = value;
                                 break;
                             }
                         }
                     }
-                    material.parameters[value.parameter] = paramValue;
-                }, this);
+                }
             }
 
             if (!this._materials) {
@@ -253,7 +249,6 @@ exports.RuntimeTFLoader = Object.create(glTFParser, {
                     mesh.compression.compressedData.bufferView =  this.getEntry(mesh.compression.compressedData.bufferView).entry;
                     mesh.compression.compressedData.id = entryID + "_compressedData"
                 }
-
             }
 
             this.storeEntry(entryID, mesh, description);
@@ -311,7 +306,6 @@ exports.RuntimeTFLoader = Object.create(glTFParser, {
     handleCamera: {
         value: function(entryID, description, userInfo) {
             //Do not handle camera for now.
-
             var camera = Object.create(Camera).init();
             camera.id = entryID;
             this.storeEntry(entryID, camera, description);
@@ -337,7 +331,13 @@ exports.RuntimeTFLoader = Object.create(glTFParser, {
             if (children) {
                 children.forEach( function(childID) {
                     var nodeEntry = this.getEntry(childID);
-                    parentNode.children.push(nodeEntry.entry);
+                    var node = nodeEntry.entry;
+                    if (node.parent == null) {
+                        parentNode.children.push(node);
+                    } else {
+                        parentNode.children.push(node.copy());
+                    }
+
                     this.buildNodeHirerachy(nodeEntry);
                 }, this);
             }
@@ -430,6 +430,7 @@ exports.RuntimeTFLoader = Object.create(glTFParser, {
             scene.ids = this._ids;
             scene.id = entryID;
             scene.name = description.name;
+            scene.baseURL = this.baseURL;
             this.storeEntry(entryID, scene, description);
 
             var rootNode = Object.create(glTFNode).init();
@@ -563,21 +564,35 @@ exports.RuntimeTFLoader = Object.create(glTFParser, {
                 var parameterDescription = description.parameters[parameterSID];
                 //we can avoid code below if we add byteStride
                 switch (parameterDescription.type) {
-                    case "FLOAT_VEC4":
+                    case WebGLRenderingContext.FLOAT_VEC4:
                         componentsPerAttribute = 4;
                         break;
-                    case "FLOAT_VEC3":
+                    case WebGLRenderingContext.FLOAT_VEC3:
                         componentsPerAttribute = 3;
                         break;
-                    case "FLOAT_VEC2":
+                    case WebGLRenderingContext.FLOAT_VEC2:
                         componentsPerAttribute = 2;
                         break;
-                    case "FLOAT":
+                    case WebGLRenderingContext.FLOAT:
                         componentsPerAttribute = 1;
                         break;
                     default: {
                         console.log("type:"+parameterDescription.type+" byteStride not handled");
                         break;
+                    }
+                }
+
+                if (parameterDescription.extensions) {
+                    var extensions = parameterDescription.extensions;
+                    if (extensions) {
+                        var compressionObject = extensions["Open3DGC-compression"];
+                        if (compressionObject) {
+                            var compressedData = compressionObject["compressedData"];
+                            if (compressedData) {
+                                compressedData.bufferView = this.getEntry(compressedData.bufferView).entry;
+                                compressedData.id = entryID + parameterSID + "_compressedData";
+                            }
+                        }
                     }
                 }
 
@@ -617,6 +632,15 @@ exports.RuntimeTFLoader = Object.create(glTFParser, {
                 description.sampler = this.getEntry(description.sampler).entry;
                 description.id = entryID; //because the resource manager needs this
                 this.storeEntry(entryID, description, description);
+            } else if (description.sources && description.sampler) {
+                description.type = "texture";
+                for (var i = 0 ; i < description.sources.length ; i++) {
+                    description.sources[i] = this.getEntry(description.sources[i]).entry;
+                }
+                description.sampler = this.getEntry(description.sampler).entry;
+                description.id = entryID; //because the resource manager needs this
+                this.storeEntry(entryID, description, description);
+
             } else {
                 console.log("ERROR: texture"+entryID+" must contain both source and sampler properties");
             }

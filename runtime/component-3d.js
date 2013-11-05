@@ -23,10 +23,11 @@
 
 var Montage = require("montage").Montage;
 var glTFNode = require("runtime/glTF-node").glTFNode;
+var Target = require("montage/core/target").Target
 
 //FIXME: add a state to now that resolution of id pending to avoid adding useless listeners
 //This currently *can't* happen with the code path in use, the API would allow it.
-exports.Component3D = Montage.specialize( {
+exports.Component3D = Target.specialize( {
 
     //FIXME: work-around
     self: {
@@ -65,8 +66,31 @@ exports.Component3D = Montage.specialize( {
         }
     },
 
-    _hasUnresolvedId: { value: false, writable: true },
+    baseURL: {
+        get: function() {
+            return this.scene ? this.scene.glTFElement.baseURL : null;
+        }
+    },
 
+    _isAbsolutePath: {
+        value: function(path) {
+            var isAbsolutePathRegExp = new RegExp("^"+window.location.protocol, "i");
+
+            return path.match(isAbsolutePathRegExp) ? true : false;
+        }
+    },
+
+    resolvePathIfNeeded: {
+        value: function(path) {
+            if (this._isAbsolutePath(path)) {
+                return path;
+            }
+
+            return this.baseURL + path;
+        }
+    },
+
+    _hasUnresolvedId: { value: false, writable: true },
 
     handleStatusChange: {
         value: function(status, key, object) {
@@ -76,7 +100,7 @@ exports.Component3D = Montage.specialize( {
 
                     if (this.glTFElement) {
                         this._hasUnresolvedId = false;
-                        console.log("node attached to element with id:"+this._id);
+                        //console.log("node attached to element with id:"+this._id);
                     }
                 }
             }
@@ -96,7 +120,7 @@ exports.Component3D = Montage.specialize( {
                         this.glTFElement = this.scene.glTFElement.ids[this._id];
                         if (this.glTFElement) {
                             this._hasUnresolvedId = false;
-                            console.log("node attached to element with id:"+this._id);
+                            //console.log("node attached to element with id:"+this._id);
                         }
                     }
                 }

@@ -25,6 +25,8 @@ var Montage = require("montage").Montage;
 var Component3D = require("runtime/component-3d").Component3D;
 var RuntimeTFLoader = require("runtime/runtime-tf-loader").RuntimeTFLoader;
 var URL = require("montage/core/url");
+var SceneResourceLoader = require("runtime/scene-resource-loader").SceneResourceLoader;
+var Q = require("q");
 
 exports.Scene = Component3D.specialize( {
 
@@ -34,12 +36,35 @@ exports.Scene = Component3D.specialize( {
         }
     },
 
+    _resourcesLoaded: { value: false, writable: true },
+
+    sceneResourcesDidPrepare: {
+        value: function() {
+            if (!this._resourcesLoaded) {
+                if (this._prepareToRenderDefer) {
+                    this._prepareToRenderDefer.resolve();
+                }
+                this._resourcesLoaded = true;
+                //FIXME: we should pass { scene:scene webGLContext:webGLContext
+                //only problem now is pass the webGLContext through the promise properly
+                this.dispatchEventNamed("resourcesDidLoad", true, false, this);
+                this.status = "loaded";
+                console.log("resourcesDidLoad");
+            }
+        }
+    },
+
+    isLoaded: {
+        value: function() {
+            return this.status == "loaded";
+        }
+    },
+
     status: { value: 0, writable:true},
 
     path: {
         set: function(value) {
             //Work-around until montage implements textfield that do not send continous input..
-
             if (value) {
                 if (value.indexOf(".json") === -1)
                     return;
@@ -53,6 +78,7 @@ exports.Scene = Component3D.specialize( {
             }
 
             if (value !== this._path) {
+                var self = this;
                 var readerDelegate = {};
                 readerDelegate.loadCompleted = function (scene) {
                     this.totalBufferSize =  loader.totalBufferSize;
@@ -80,8 +106,29 @@ exports.Scene = Component3D.specialize( {
         }
     },
 
+    _prepareToRenderDefer: { value: null, writable: true },
+
+    /*
+        This method doesn't need to be called directly if the rendering is done via a view.
+     */
+    prepareToRender: {
+        value: function(webGLRenderer) {
+            if (this._prepareToRenderDefer == null) {
+                this._prepareToRenderDefer = Q.defer();
+                var sceneResourceLoader = Object.create(SceneResourceLoader).init(this.glTFElement, webGLRenderer, this);
+                sceneResourceLoader.loadScene();
+            }
+
+            return this._prepareToRenderDefer.promise;
+        }
+    },
+
     init: {
-        value:function() {
+        value:function(glTFElement) {
+            if (glTFElement) {
+                this.glTFElement = glTFElement;
+                this.status = "loaded";
+            }
             return this.initWithScene(this);
         }
     }

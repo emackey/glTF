@@ -25,6 +25,91 @@
 // THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 require("runtime/dependencies/gl-matrix");
+
+exports.BBox = Object.create(Object.prototype, {
+
+    _dirty: { value: true, writable:true },
+    _size: { value: null, writable: true },
+    _min: { value: null, writable: true },
+    _max: { value: null, writable: true },
+
+    min: {
+        get: function() {
+            return this._min;
+        },
+        set: function(value) {
+            this._min = value;
+            this._dirty = true;
+        }
+    },
+
+    max: {
+        get: function() {
+            return this._max;
+        },
+        set: function(value) {
+            this._max = value;
+            this._dirty = true;
+        }
+    },
+
+    init: {
+        value:function(min, max) {
+            this.min = min;
+            this.max = max;
+            return this;
+        }
+    },
+
+    size: {
+        get: function() {
+            if (this._dirty) {
+                var min = this.min;
+                var max = this.max;
+                this._size = [
+                    (max[0] - min[0]) ,
+                    (max[1] - min[1]) ,
+                    (max[2] - min[2])];
+                this._dirty = false;
+            }
+            return this._size;
+        }
+    },
+
+    computeScaleFactor: {
+        value: function() {
+            var size = this.size;
+            //size to fit
+            var scaleFactor = size[0] > size[1] ? size[0] : size[1];
+            scaleFactor = size[2] > scaleFactor ? size[2] : scaleFactor;
+            scaleFactor =  1. / scaleFactor;
+            return scaleFactor;
+        }
+    },
+
+    computeUnitMatrix: {
+        value: function(offset) {
+            var size = this.size;
+            var min = this.min;
+            if (offset == null)
+                offset = [0, 0, 0];
+            //size to fit
+            var scaleFactor = this.computeScaleFactor();
+            var scaleMatrix = mat4.scale(mat4.identity(), [scaleFactor, scaleFactor, scaleFactor]);
+            var translationVector = vec3.createFrom(
+                offset[0] -((size[0] / 2) + min[0]),
+                offset[1] -((size[1] / 2) + min[1]),
+                offset[2] -((size[2] / 2) + min[2]));
+            var translation = mat4.translate(scaleMatrix, [
+                translationVector[0],
+                translationVector[1],
+                translationVector[2]]);
+            return translation;
+        }
+    }
+});
+
+
 exports.Utilities = Object.create(Object.prototype, {
 
     vec3Min: {
@@ -229,5 +314,203 @@ exports.Utilities = Object.create(Object.prototype, {
 
             return true;
         }
+    },
+
+    inverpolateAxisAngle : {
+        value: function(from, to, step, destination) {
+            var AXIS_ANGLE_INTERP = 0;
+            var AXIS_ANGLE_INTERP_NAIVE = 1;
+            var QUATERNION = 2;
+            var interpolationType = QUATERNION;//AXIS_ANGLE_INTERP_NAIVE;
+            var axisAngle1 = vec4.createFrom(from[0],from[1],from[2],from[3]);
+            var axisAngle2 = vec4.createFrom(to[0],to[1],to[2],to[3]);
+            if (interpolationType == AXIS_ANGLE_INTERP) {
+                vec3.normalize(axisAngle1); //FIXME: do that upfront
+                vec3.normalize(axisAngle2);
+                //get the rotation axis from the cross product
+                var rotAxis = vec3.create();
+                vec3.cross(axisAngle1, axisAngle2, rotAxis);
+
+                var lA1 = Math.sqrt(vec3.dot(axisAngle1,axisAngle1));
+                var lA2 = Math.sqrt(vec3.dot(axisAngle2,axisAngle2));
+
+                //now the rotation angle
+                var angle = Math.acos(vec3.dot(axisAngle1,axisAngle2));
+                var axisAngleRotMat = mat4.identity();
+                mat4.rotate(axisAngleRotMat, angle * step, rotAxis);
+
+                mat4.multiplyVec3(axisAngleRotMat, axisAngle1, rotAxis);
+                vec3.normalize(rotAxis);
+
+                var interpolatedAngle = axisAngle1[3]+((axisAngle2[3]-axisAngle1[3]) * step);
+                quat4.fromAngleAxis(interpolatedAngle, rotAxis, destination);
+            } else if (interpolationType == AXIS_ANGLE_INTERP_NAIVE) {
+                //direct linear interpolation of components, to be considered for small angles
+                for (i = 0 ; i < destination.length ; i++) {
+                    var v1 = axisAngle1[i];
+                    var v2 = axisAngle2[i];
+                    axisAngle2[i] = v1 + ((v2 - v1) * step);
+                }
+                quat4.fromAngleAxis(axisAngle2[3], axisAngle2, destination);
+            } else if (interpolationType == QUATERNION) {
+                quat4.slerp(from, to, step, destination);
+            }
+        }
+    },
+
+    //utility to move out of here and be shared with same code in animations
+    interpolateVec: {
+        value: function(from, to, step, destination) {
+            for (i = 0 ; i < destination.length ; i++) {
+                var v1 = from[i];
+                var v2 = to[i];
+                destination[i] = v1 + ((v2 - v1) * step);
+            }
+        }
+    },
+
+    /* Originally from: http://tog.acm.org/resources/GraphicsGems/gemsii/unmatrix.c
+     * Simplified version without Shear and Perspective decomposition
+     *
+     * unmatrix.c - given a 4x4 matrix, decompose it into standard operations.
+     *
+     * Author:	Spencer W. Thomas
+     * 		University of Michigan
+     */
+    idx: {
+        value: function(i, j) {
+            return (i * 4) + j;
+        }
+    },
+
+    decomposeMat4: {
+        value: function(matrix, translation, rotation, scale) {
+            var i, j;
+            var locMat = mat4.create();
+            var pmat = mat4.create();
+            var invpmat = mat4.create();
+            var tinvpmat = mat4.create();
+            var rows = [vec3.create(), vec3.create(), vec3.create()];
+
+            mat4.set(matrix, locMat);
+
+            var idx, idx1;
+            for (i = 0 ; i < 4 ; i++) {
+                for (j = 0 ; j < 4 ; j++) {
+                    idx = this.idx(i,j);
+                    idx1 = this.idx(3,3);
+                    locMat[idx] /= locMat[idx1];
+                }
+            }
+            mat4.set(locMat, pmat);
+
+            for (i = 0; i < 3; i++ ) {
+                idx = this.idx(i,3);
+                pmat[idx] = 0
+            }
+            idx = this.idx(3,3);
+            pmat[idx] = 1;
+
+            if (locMat[this.idx(0, 3)] != 0 ||
+                locMat[this.idx(1, 3)] != 0 ||
+                locMat[this.idx(2, 3)] != 0 ) {
+                locMat[this.idx(0, 3)] = 0;
+                locMat[this.idx(1, 3)] = 0;
+                locMat[this.idx(2, 3)] = 0;
+                locMat[this.idx(3, 3)] = 1;
+            }
+
+            translation[0] = locMat[this.idx(3, 0)];
+            locMat[this.idx(3, 0)] = 0;
+            translation[1] = locMat[this.idx(3, 1)];
+            locMat[this.idx(3, 1)] = 0;
+            translation[2] = locMat[this.idx(3, 2)];
+            locMat[this.idx(3, 2)] = 0;
+
+            /* Now get scale and shear. */
+            for ( i = 0 ; i < 3 ; i++ ) {
+                rows[i][0] = locMat[this.idx(i, 0)];
+                rows[i][1] = locMat[this.idx(i, 1)];
+                rows[i][2] = locMat[this.idx(i, 2)];
+            }
+
+            scale[0] = vec3.length(rows[0]);
+            vec3.normalize(rows[0]);
+
+            scale[1] = vec3.length(rows[1]);
+            vec3.normalize(rows[1]);
+
+            scale[2] = vec3.length(rows[2]);
+            vec3.normalize(rows[2]);
+
+            var res = vec3.create();
+            vec3.cross(rows[1], rows[2], res);
+
+            if ( vec3.dot(rows[0], res) < 0 ) {
+                for ( i = 0; i < 3; i++ ) {
+                    scale[i] *= -1;
+                    rows[i][0] *= -1;
+                    rows[i][1] *= -1;
+                    rows[i][2] *= -1;
+                }
+            }
+
+            var amat3 = mat3.create();
+            amat3[0] = rows[0][0];
+            amat3[1] = rows[1][0];
+            amat3[2] = rows[2][0];
+            amat3[3] = rows[0][1];
+            amat3[4] = rows[1][1];
+            amat3[5] = rows[2][1];
+            amat3[6] = rows[0][2];
+            amat3[7] = rows[1][2];
+            amat3[8] = rows[2][2];
+            mat3.transpose(amat3);
+            quat4.fromRotationMatrix(amat3, rotation);
+            quat4.normalize(rotation);
+        }
+    },
+
+    easeOut: {
+        value: function(x) {
+            //actually, just ease out
+            var t = x;
+            var start = 0;
+            var end = 1;
+
+            t--;
+            y =  end*(t * t * t + 1.) + start - 1.;
+            y = -y;
+            y = 1 - y;
+            return y;
+
+            /*
+             t *= 2;
+             var y;
+             if (t < 1.) {
+             y = end/2. * t * t + start - 1.;
+
+             } else {
+
+             t--;
+             y= -end/2. * (t*(t-2) - 1) + start - 1.;
+             }
+             y = -y;
+
+             y = 1 - y;
+             return y;
+             */
+            /*
+             t *= 2.;
+             if (t < 1.)  {
+             y = end/2 * t * t * t + start - 1.;
+             } else {
+             t -= 2;
+             y = end/2*(t * t * t + 2) + start - 1.;
+             }
+             */
+            //return y;
+        }
     }
+
 });
